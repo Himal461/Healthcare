@@ -1,0 +1,461 @@
+<?php
+require_once '../includes/config.php';
+require_once '../includes/auth.php';
+checkRole('admin');
+
+$pageTitle = "Manage Users - HealthManagement";
+include '../includes/header.php';
+
+// Handle user actions
+if (isset($_GET['action']) && isset($_GET['id'])) {
+    $userId = (int)$_GET['id'];
+    $action = $_GET['action'];
+    
+    try {
+        switch ($action) {
+            case 'verify':
+                $stmt = $pdo->prepare("UPDATE users SET isVerified = 1, verificationCode = NULL WHERE userId = ?");
+                $stmt->execute([$userId]);
+                $_SESSION['success'] = "User verified successfully!";
+                logAction($_SESSION['user_id'], 'USER_VERIFY', "Verified user ID: $userId");
+                break;
+                
+            case 'delete':
+                $stmt = $pdo->prepare("DELETE FROM users WHERE userId = ?");
+                $stmt->execute([$userId]);
+                $_SESSION['success'] = "User deleted successfully!";
+                logAction($_SESSION['user_id'], 'USER_DELETE', "Deleted user ID: $userId");
+                break;
+                
+            case 'promote':
+                $newRole = $_GET['role'];
+                $allowedRoles = ['admin', 'doctor', 'nurse', 'staff', 'patient'];
+                if (in_array($newRole, $allowedRoles)) {
+                    $stmt = $pdo->prepare("UPDATE users SET role = ? WHERE userId = ?");
+                    $stmt->execute([$newRole, $userId]);
+                    $_SESSION['success'] = "User role updated successfully!";
+                    logAction($_SESSION['user_id'], 'USER_PROMOTE', "Changed user $userId role to $newRole");
+                }
+                break;
+                
+            case 'suspend':
+                $stmt = $pdo->prepare("UPDATE users SET isSuspended = 1 WHERE userId = ?");
+                $stmt->execute([$userId]);
+                $_SESSION['success'] = "User suspended successfully!";
+                logAction($_SESSION['user_id'], 'USER_SUSPEND', "Suspended user ID: $userId");
+                break;
+                
+            case 'activate':
+                $stmt = $pdo->prepare("UPDATE users SET isSuspended = 0 WHERE userId = ?");
+                $stmt->execute([$userId]);
+                $_SESSION['success'] = "User activated successfully!";
+                logAction($_SESSION['user_id'], 'USER_ACTIVATE', "Activated user ID: $userId");
+                break;
+        }
+        
+        header("Location: users.php");
+        exit();
+    } catch (Exception $e) {
+        $error = "Failed to perform action. Please try again.";
+        error_log("User action error: " . $e->getMessage());
+    }
+}
+
+// Get filters
+$roleFilter = $_GET['role'] ?? '';
+$statusFilter = $_GET['status'] ?? '';
+$search = $_GET['search'] ?? '';
+
+// Build query
+$query = "
+    SELECT u.*, 
+           p.dateOfBirth,
+           p.bloodType,
+           d.specialization,
+           s.licenseNumber,
+           s.hireDate
+    FROM users u
+    LEFT JOIN patients p ON u.userId = p.userId
+    LEFT JOIN staff s ON u.userId = s.userId
+    LEFT JOIN doctors d ON s.staffId = d.staffId
+    WHERE 1=1
+";
+
+$params = [];
+
+if ($roleFilter) {
+    $query .= " AND u.role = ?";
+    $params[] = $roleFilter;
+}
+
+if ($statusFilter === 'verified') {
+    $query .= " AND u.isVerified = 1";
+} elseif ($statusFilter === 'unverified') {
+    $query .= " AND u.isVerified = 0";
+}
+
+if ($search) {
+    $query .= " AND (u.username LIKE ? OR u.email LIKE ? OR u.firstName LIKE ? OR u.lastName LIKE ?)";
+    $searchTerm = "%$search%";
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
+}
+
+$query .= " ORDER BY u.dateCreated DESC";
+
+$stmt = $pdo->prepare($query);
+$stmt->execute($params);
+$users = $stmt->fetchAll();
+
+// Get statistics
+$totalUsers = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+$totalDoctors = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'doctor'")->fetchColumn();
+$totalPatients = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'patient'")->fetchColumn();
+$pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified = 0")->fetchColumn();
+?>
+
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h1>Manage Users</h1>
+        <p>Manage system users and their permissions</p>
+    </div>
+
+    <?php if (isset($error)): ?>
+        <div class="alert alert-error"><?php echo $error; ?></div>
+    <?php endif; ?>
+
+    <!-- Users Statistics -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3><?php echo $totalUsers; ?></h3>
+            <p>Total Users</p>
+        </div>
+        <div class="stat-card">
+            <h3><?php echo $totalDoctors; ?></h3>
+            <p>Doctors</p>
+        </div>
+        <div class="stat-card">
+            <h3><?php echo $totalPatients; ?></h3>
+            <p>Patients</p>
+        </div>
+        <div class="stat-card">
+            <h3><?php echo $pendingVerification; ?></h3>
+            <p>Pending Verification</p>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Filter Users</h3>
+        </div>
+        <div class="card-body">
+            <form method="GET" action="" class="filter-form">
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label for="role">Role</label>
+                        <select name="role" id="role">
+                            <option value="">All Roles</option>
+                            <option value="admin" <?php echo $roleFilter === 'admin' ? 'selected' : ''; ?>>Admin</option>
+                            <option value="doctor" <?php echo $roleFilter === 'doctor' ? 'selected' : ''; ?>>Doctor</option>
+                            <option value="nurse" <?php echo $roleFilter === 'nurse' ? 'selected' : ''; ?>>Nurse</option>
+                            <option value="staff" <?php echo $roleFilter === 'staff' ? 'selected' : ''; ?>>Staff</option>
+                            <option value="patient" <?php echo $roleFilter === 'patient' ? 'selected' : ''; ?>>Patient</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="status">Status</label>
+                        <select name="status" id="status">
+                            <option value="">All Status</option>
+                            <option value="verified" <?php echo $statusFilter === 'verified' ? 'selected' : ''; ?>>Verified</option>
+                            <option value="unverified" <?php echo $statusFilter === 'unverified' ? 'selected' : ''; ?>>Unverified</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label for="search">Search</label>
+                        <input type="text" name="search" id="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="Name, email, username...">
+                    </div>
+                    
+                    <div class="filter-group filter-actions">
+                        <button type="submit" class="btn btn-primary">Apply Filters</button>
+                        <a href="users.php" class="btn btn-outline">Reset</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="card">
+        <div class="card-header">
+            <h3>All Users</h3>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Registered</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($users)): ?>
+                        <tr>
+                            <td colspan="7" style="text-align: center;">No users found</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($users as $user): ?>
+                            <tr>
+                                <td data-label="ID">#<?php echo $user['userId']; ?></td>
+                                <td data-label="Name">
+                                    <?php echo htmlspecialchars($user['firstName'] . ' ' . $user['lastName']); ?>
+                                    <br>
+                                    <small><?php echo htmlspecialchars($user['username']); ?></small>
+                                </td>
+                                <td data-label="Email"><?php echo htmlspecialchars($user['email']); ?></td>
+                                <td data-label="Role">
+                                    <span class="role-badge role-<?php echo $user['role']; ?>">
+                                        <?php echo ucfirst($user['role']); ?>
+                                    </span>
+                                </td>
+                                <td data-label="Status">
+                                    <?php if ($user['isVerified']): ?>
+                                        <span class="status-badge status-verified">Verified</span>
+                                    <?php else: ?>
+                                        <span class="status-badge status-unverified">Unverified</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td data-label="Registered"><?php echo date('M j, Y', strtotime($user['dateCreated'])); ?></td>
+                                <td data-label="Actions">
+                                    <div class="action-buttons">
+                                        <?php if (!$user['isVerified']): ?>
+                                            <a href="?action=verify&id=<?php echo $user['userId']; ?>" 
+                                               class="btn btn-success btn-sm" 
+                                               title="Verify User">
+                                                <i class="fas fa-check"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        
+                                        <div class="dropdown">
+                                            <button class="btn btn-primary btn-sm dropdown-toggle" data-dropdown="role-menu-<?php echo $user['userId']; ?>">
+                                                <i class="fas fa-user-tag"></i> Role
+                                            </button>
+                                            <div id="role-menu-<?php echo $user['userId']; ?>" class="dropdown-menu">
+                                                <?php 
+                                                $roles = ['patient', 'staff', 'nurse', 'doctor', 'admin'];
+                                                foreach ($roles as $role): 
+                                                    if ($role !== $user['role']):
+                                                ?>
+                                                    <a href="?action=promote&id=<?php echo $user['userId']; ?>&role=<?php echo $role; ?>" class="dropdown-item">
+                                                        <?php echo ucfirst($role); ?>
+                                                    </a>
+                                                <?php 
+                                                    endif;
+                                                endforeach; 
+                                                ?>
+                                            </div>
+                                        </div>
+                                        
+                                        <a href="?action=delete&id=<?php echo $user['userId']; ?>" 
+                                           class="btn btn-danger btn-sm" 
+                                           onclick="return confirm('Are you sure you want to delete this user? This action cannot be undone.')"
+                                           title="Delete User">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+.filter-form {
+    margin: 0;
+}
+
+.filter-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr auto;
+    gap: 15px;
+    align-items: end;
+}
+
+.filter-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    font-size: 12px;
+    color: #666;
+}
+
+.filter-group select,
+.filter-group input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.filter-actions button,
+.filter-actions a {
+    padding: 10px 20px;
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.role-admin {
+    background: #dc3545;
+    color: white;
+}
+
+.role-doctor {
+    background: #007bff;
+    color: white;
+}
+
+.role-nurse {
+    background: #6f42c1;
+    color: white;
+}
+
+.role-staff {
+    background: #fd7e14;
+    color: white;
+}
+
+.role-patient {
+    background: #28a745;
+    color: white;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-verified {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-unverified {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.btn-sm {
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: white;
+    min-width: 100px;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+    z-index: 1000;
+    margin-top: 5px;
+}
+
+.dropdown-menu.show {
+    display: block;
+}
+
+.dropdown-item {
+    display: block;
+    padding: 8px 15px;
+    text-decoration: none;
+    color: #333;
+    transition: background 0.3s ease;
+}
+
+.dropdown-item:hover {
+    background: #f8f9fa;
+}
+
+@media (max-width: 768px) {
+    .filter-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .filter-actions {
+        grid-column: 1;
+    }
+}
+</style>
+
+<script>
+// Dropdown functionality
+document.querySelectorAll('.dropdown-toggle').forEach(button => {
+    button.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const dropdownId = this.getAttribute('data-dropdown');
+        const dropdown = document.getElementById(dropdownId);
+        
+        // Close all other dropdowns
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+            if (menu.id !== dropdownId) {
+                menu.classList.remove('show');
+            }
+        });
+        
+        dropdown.classList.toggle('show');
+    });
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.dropdown')) {
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+            menu.classList.remove('show');
+        });
+    }
+});
+</script>
+
+<?php include '../includes/footer.php'; ?>

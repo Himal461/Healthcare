@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Services - HealthManagement</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: #f8f9fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        /* Header Styles */
+        header {
+            background: linear-gradient(135deg, #1a75bc 0%, #0a4299 100%);
+            color: white;
+            padding: 15px 0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+        }
+        
+        .logo i {
+            margin-right: 10px;
+        }
+        
+        nav ul {
+            display: flex;
+            list-style: none;
+        }
+        
+        nav ul li {
+            margin-left: 25px;
+        }
+        
+        nav ul li a {
+            color: white;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        
+        nav ul li a:hover {
+            color: #a0d2ff;
+        }
+        
+        .auth-buttons a {
+            color: white;
+            text-decoration: none;
+            margin-left: 15px;
+            font-weight: 500;
+        }
+        
+        .auth-buttons a.login {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 15px;
+            border-radius: 20px;
+            transition: background 0.3s;
+        }
+        
+        .auth-buttons a.login:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* Page Header */
+        .page-header {
+            background: white;
+            padding: 40px 0;
+            text-align: center;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        
+        .page-header h1 {
+            color: #1a75bc;
+            font-size: 36px;
+            margin-bottom: 15px;
+        }
+        
+        .page-header p {
+            color: #666;
+            font-size: 18px;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        
+        /* Services Section */
+        .services-intro {
+            text-align: center;
+            margin-bottom: 40px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .services-intro h2 {
+            color: #1a75bc;
+            margin-bottom: 15px;
+            font-size: 28px;
+        }
+        
+        .services-intro p {
+            color: #666;
+            line-height: 1.8;
+        }
+        
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+        
+        .service-card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 3px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .service-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        .service-icon {
+            height: 180px;
+            background: linear-gradient(120deg, #74b6e6 0%, #1a75bc 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 60px;
+        }
+        
+        .service-content {
+            padding: 25px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .service-content h3 {
+            color: #1a75bc;
+            margin-bottom: 15px;
+            font-size: 22px;
+        }
+        
+        .service-content p {
+            color: #666;
+            margin-bottom: 20px;
+            flex: 1;
+        }
+        
+        .service-features {
+            margin-bottom: 20px;
+        }
+        
+        .service-features li {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            color: #555;
+        }
+        
+        .service-features i {
+            color: #1a75bc;
+            margin-right: 10px;
+        }
+        
+        .service-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: auto;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.3s;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-learn {
+            background: #f8f9fa;
+            color: #1a75bc;
+            border: 1px solid #ddd;
+        }
+        
+        .btn-learn:hover {
+            background: #e9ecef;
+        }
+        
+        .btn-book {
+            background: #1a75bc;
+            color: white;
+        }
+        
+        .btn-book:hover {
+            background: #0a4299;
+        }
+        
+        /* Emergency Services */
+        .emergency-services {
+            background: linear-gradient(135deg, #ff6b6b 0%, #c82333 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 10px;
+            margin-bottom: 50px;
+            text-align: center;
+        }
+        
+        .emergency-services h2 {
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+        
+        .emergency-services p {
+            margin-bottom: 25px;
+            font-size: 18px;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .emergency-contact {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+        
+        .btn-emergency {
+            background: white;
+            color: #c82333;
+            padding: 12px 25px;
+            border-radius: 4px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s;
+        }
+        
+        .btn-emergency:hover {
+            background: #f8f9fa;
+            transform: translateY(-2px);
+        }
+        
+        /* Testimonials */
+        .testimonials {
+            background: white;
+            padding: 50px 0;
+            margin-bottom: 50px;
+        }
+        
+        .testimonials h2 {
+            text-align: center;
+            color: #1a75bc;
+            margin-bottom: 40px;
+            font-size: 28px;
+        }
+        
+        .testimonial-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 25px;
+        }
+        
+        .testimonial-card {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+        }
+        
+        .testimonial-text {
+            font-style: italic;
+            color: #555;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+        
+        .testimonial-author {
+            display: flex;
+            align-items: center;
+        }
+        
+        .author-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #1a75bc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            margin-right: 15px;
+        }
+        
+        .author-details h4 {
+            color: #1a75bc;
+            margin-bottom: 5px;
+        }
+        
+        .author-details p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        /* Footer */
+        footer {
+            background: #0a4299;
+            color: white;
+            padding: 40px 0 20px;
+        }
+        
+        .footer-content {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        
+        .footer-section {
+            flex: 1;
+            min-width: 250px;
+            margin-bottom: 30px;
+        }
+        
+        .footer-section h3 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            position: relative;
+            padding-bottom: 10px;
+        }
+        
+        .footer-section h3:after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 40px;
+            height: 2px;
+            background: #a0d2ff;
+        }
+        
+        .footer-section p, .footer-section a {
+            color: #cce0ff;
+            margin-bottom: 10px;
+            display: block;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+        
+        .footer-section a:hover {
+            color: white;
+        }
+        
+        .footer-bottom {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #1a5bb8;
+            margin-top: 20px;
+            color: #cce0ff;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            nav ul {
+                display: none;
+            }
+            
+            .services-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .service-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .btn {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="top-bar">
+                <a href="#" class="logo">
+                    <i class="fas fa-heartbeat"></i>
+                    healthmanagement
+                </a>
+                <nav>
+                    <ul>
+                        <li><a href="#">Home</a></li>
+                        <li><a href="#">Find a doctor</a></li>
+                        <li><a href="#" class="active">Services</a></li>
+                        <li><a href="#">Contact Us</a></li>
+                    </ul>
+                </nav>
+                <div class="auth-buttons">
+                    <a href="#" class="login">Login/Register</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Page Header -->
+    <section class="page-header">
+        <div class="container">
+            <h1>Services Available</h1>
+            <p>Comprehensive healthcare services tailored to meet your needs and ensure your well-being</p>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <main class="container">
+        <!-- Services Intro -->
+        <section class="services-intro">
+            <h2>Our Healthcare Services</h2>
+            <p>At HealthManagement, we offer a wide range of medical services provided by experienced healthcare professionals. Our patient-centered approach ensures you receive the highest quality care in a comfortable environment.</p>
+        </section>
+
+        <!-- Services Grid -->
+        <section class="services-grid">
+            <!-- Primary Care -->
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-stethoscope"></i>
+                </div>
+                <div class="service-content">
+                    <h3>Primary Care</h3>
+                    <p>Comprehensive primary care services for patients of all ages, including preventive care, health screenings, and management of chronic conditions.</p>
+                    <ul class="service-features">
+                        <li><i class="fas fa-check"></i> Annual physical exams</li>
+                        <li><i class="fas fa-check"></i> Vaccinations and immunizations</li>
+                        <li><i class="fas fa-check"></i> Chronic disease management</li>
+                        <li><i class="fas fa-check"></i> Health counseling</li>
+                    </ul>
+                    <div class="service-actions">
+                        <a href="#" class="btn btn-learn">Learn More</a>
+                        <a href="#" class="btn btn-book">Book Now</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Specialty Care -->
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-heartbeat"></i>
+                </div>
+                <div class="service-content">
+                    <h3>Specialty Care</h3>
+                    <p>Access to specialized medical care across various disciplines, including cardiology, dermatology, neurology, and more.</p>
+                    <ul class="service-features">
+                        <li><i class="fas fa-check"></i> Cardiology</li>
+                        <li><i class="fas fa-check"></i> Dermatology</li>
+                        <li><i class="fas fa-check"></i> Neurology</li>
+                        <li><i class="fas fa-check"></i> Orthopedics</li>
+                    </ul>
+                    <div class="service-actions">
+                        <a href="#" class="btn btn-learn">Learn More</a>
+                        <a href="#" class="btn btn-book">Book Now</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Emergency Care -->
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-ambulance"></i>
+                </div>
+                <div class="service-content">
+                    <h3>Emergency Care</h3>
+                    <p>24/7 emergency medical services for urgent health issues, equipped with state-of-the-art technology and staffed by experienced emergency physicians.</p>
+                    <ul class="service-features">
+                        <li><i class="fas fa-check"></i> 24/7 availability</li>
+                        <li><i class="fas fa-check"></i> Trauma care</li>
+                        <li><i class="fas fa-check"></i> Emergency surgery</li>
+                        <li><i class="fas fa-check"></i> Critical care</li>
+                    </ul>
+                    <div class="service-actions">
+                        <a href="#" class="btn btn-learn">Learn More</a>
+                        <a href="#" class="btn btn-book">Emergency Info</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Diagnostic Services -->
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-x-ray"></i>
+                </div>
+                <div class="service-content">
+                    <h3>Diagnostic Services</h3>
+                    <p>Advanced diagnostic imaging and laboratory services to accurately identify health conditions and guide treatment plans.</p>
+                    <ul class="service-features">
+                        <li><i class="fas fa-check"></i> MRI and CT scans</li>
+                        <li><i class="fas fa-check"></i> X-ray and ultrasound</li>
+                        <li><i class="fas fa-check"></i> Laboratory testing</li>
+                        <li><i class="fas fa-check"></i> Biopsy services</li>
+                    </ul>
+                    <div class="service-actions">
+                        <a href="#" class="btn btn-learn">Learn More</a>
+                        <a href="#" class="btn btn-book">Schedule Test</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Surgical Services -->
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-procedures"></i>
+                </div>
+                <div class="service-content">
+                    <h3>Surgical Services</h3>
+                    <p>Comprehensive surgical care ranging from minimally invasive procedures to complex surgeries, performed by skilled surgeons.</p>
+                    <ul class="service-features">
+                        <li><i class="fas fa-check"></i> Minimally invasive surgery</li>
+                        <li><i class="fas fa-check"></i> Outpatient procedures</li>
+                        <li><i class="fas fa-check"></i> Robotic-assisted surgery</li>
+                        <li><i class="fas fa-check"></i> Post-operative care</li>
+                    </ul>
+                    <div class="service-actions">
+                        <a href="#" class="btn btn-learn">Learn More</a>
+                        <a href="#" class="btn btn-book">Consultation</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mental Health -->
+            <div class="service-card">
+                <div class="service-icon">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <div class="service-content">
+                    <h3>Mental Health</h3>
+                    <p>Comprehensive mental health services including counseling, therapy, and psychiatric care to support emotional well-being.</p>
+                    <ul class="service-features">
+                        <li><i class="fas fa-check"></i> Individual therapy</li>
+                        <li><i class="fas fa-check"></i> Group therapy sessions</li>
+                        <li><i class="fas fa-check"></i> Psychiatric evaluations</li>
+                        <li><i class="fas fa-check"></i> Crisis intervention</li>
+                    </ul>
+                    <div class="service-actions">
+                        <a href="#" class="btn btn-learn">Learn More</a>
+                        <a href="#" class="btn btn-book">Schedule Visit</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Emergency Services -->
+        <section class="emergency-services">
+            <h2>Need Immediate Medical Attention?</h2>
+            <p>Our emergency department is open 24/7 to provide immediate care for serious injuries and life-threatening conditions.</p>
+            <div class="emergency-contact">
+                <i class="fas fa-phone-alt"></i> 1-800-HELP-NOW
+            </div>
+            <a href="#" class="btn-emergency">Emergency Information</a>
+        </section>
+
+        <!-- Testimonials -->
+        <section class="testimonials">
+            <h2>What Our Patients Say</h2>
+            <div class="testimonial-grid">
+                <div class="testimonial-card">
+                    <p class="testimonial-text">"The care I received at HealthManagement was exceptional. The doctors took time to listen to my concerns and explained everything clearly."</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">JD</div>
+                        <div class="author-details">
+                            <h4>John Doe</h4>
+                            <p>Primary Care Patient</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <p class="testimonial-text">"The surgical team was amazing. From pre-op to recovery, I felt well-cared for and informed throughout the entire process."</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">SM</div>
+                        <div class="author-details">
+                            <h4>Sarah Miller</h4>
+                            <p>Surgery Patient</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <p class="testimonial-text">"The mental health services here changed my life. My therapist provided compassionate care and effective strategies for managing my anxiety."</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">RJ</div>
+                        <div class="author-details">
+                            <h4>Robert Johnson</h4>
+                            <p>Mental Health Patient</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>About Us</h3>
+                    <p>HealthManagement is a leading healthcare provider dedicated to delivering exceptional medical care to our community.</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Quick Links</h3>
+                    <a href="#">Home</a>
+                    <a href="#">Find a Doctor</a>
+                    <a href="#">Services</a>
+                    <a href="#">Contact Us</a>
+                </div>
+                <div class="footer-section">
+                    <h3>Contact Information</h3>
+                    <p><i class="fas fa-map-marker-alt"></i> 123 Medical Drive, Health City</p>
+                    <p><i class="fas fa-phone"></i> (555) 123-4567</p>
+                    <p><i class="fas fa-envelope"></i> info@healthmanagement.com</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2023 HealthManagement. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Simple JavaScript for interactive elements
+        document.addEventListener('DOMContentLoaded', function() {
+            const serviceCards = document.querySelectorAll('.service-card');
+            
+            serviceCards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-5px)';
+                    this.style.boxShadow = '0 5px 20px rgba(0, 0, 0, 0.15)';
+                });
+                
+                card.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0)';
+                    this.style.boxShadow = '0 3px 15px rgba(0, 0, 0, 0.1)';
+                });
+            });
+            
+            // Emergency button animation
+            const emergencyBtn = document.querySelector('.btn-emergency');
+            
+            emergencyBtn.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-2px)';
+            });
+            
+            emergencyBtn.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+            });
+        });
+    </script>
+</body>
+</html>
