@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="alert alert-error"><?php echo $error; ?></div>
         <?php endif; ?>
 
-        <form method="POST" action="" class="profile-form">
+        <form method="POST" action="" class="profile-form" id="profile-form">
             <div class="profile-card">
                 <h3><i class="fas fa-user-circle"></i> Basic Information</h3>
                 <div class="form-row">
@@ -253,119 +253,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
     </div>
 </div>
-
-<style>
-.dashboard {
-    background: white;
-    border-radius: 12px;
-    padding: 30px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-}
-
-.dashboard-header {
-    margin-bottom: 30px;
-    padding-bottom: 20px;
-    border-bottom: 2px solid #e9ecef;
-}
-
-.dashboard-header h1 {
-    color: #1a75bc;
-    font-size: 28px;
-    margin-bottom: 10px;
-}
-
-.profile-container {
-    max-width: 800px;
-    margin: 0 auto;
-}
-
-.profile-card {
-    background: #f8f9fa;
-    border-radius: 12px;
-    padding: 25px;
-    margin-bottom: 25px;
-}
-
-.profile-card h3 {
-    color: #1a75bc;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-}
-
-.form-group {
-    margin-bottom: 15px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 500;
-    color: #333;
-}
-
-.form-group input,
-.form-group select,
-.form-group textarea {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 14px;
-}
-
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-    outline: none;
-    border-color: #1a75bc;
-}
-
-.form-group small {
-    color: #666;
-    font-size: 12px;
-    display: block;
-    margin-top: 5px;
-}
-
-.form-actions {
-    display: flex;
-    gap: 15px;
-    margin-top: 20px;
-}
-
-.btn-outline {
-    background: transparent;
-    border: 1px solid #1a75bc;
-    color: #1a75bc;
-}
-
-.btn-outline:hover {
-    background: #1a75bc;
-    color: white;
-}
-
-@media (max-width: 768px) {
-    .form-row {
-        grid-template-columns: 1fr;
-    }
-    
-    .form-actions {
-        flex-direction: column;
-    }
-    
-    .form-actions .btn {
-        width: 100%;
-        text-align: center;
-    }
-}
-</style>
 
 <?php include 'includes/footer.php'; ?>

@@ -28,6 +28,12 @@ define('WORKING_HOURS_END', '17:00');
 define('BREAK_START', '13:00');
 define('BREAK_END', '14:00');
 
+// Error Reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../logs/error.log');
+
 // Start session
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -38,6 +44,7 @@ try {
     $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    $pdo->exec("SET NAMES utf8mb4");
 } catch(PDOException $e) {
     die("Connection failed: " . $e->getMessage());
 }

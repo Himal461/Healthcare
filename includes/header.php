@@ -31,8 +31,8 @@
                                 <li><a href="<?php echo SITE_URL; ?>/doctor/availability.php">Availability</a></li>
                             <?php elseif ($_SESSION['user_role'] === 'admin'): ?>
                                 <li><a href="<?php echo SITE_URL; ?>/admin/users.php" class="<?php echo strpos($_SERVER['PHP_SELF'], 'users') !== false ? 'active' : ''; ?>">Users</a></li>
+                                <li><a href="<?php echo SITE_URL; ?>/admin/staff.php" class="<?php echo strpos($_SERVER['PHP_SELF'], 'staff') !== false ? 'active' : ''; ?>">Staff</a></li>
                                 <li><a href="<?php echo SITE_URL; ?>/admin/appointments.php">Appointments</a></li>
-                                <li><a href="<?php echo SITE_URL; ?>/admin/doctors.php">Doctors</a></li>
                                 <li><a href="<?php echo SITE_URL; ?>/admin/reports.php">Reports</a></li>
                             <?php endif; ?>
                             
@@ -83,3 +83,34 @@
                     <button class="close-alert">&times;</button>
                 </div>
             <?php endif; ?>
+
+            <script>
+// Prevent browser from caching authenticated pages
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        // Page was loaded from cache, check if user is logged in
+        fetch('check-session.php')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.logged_in) {
+                    window.location.href = 'login.php';
+                }
+            });
+    }
+});
+
+// Disable back button after logout
+history.pushState(null, null, location.href);
+window.addEventListener('popstate', function () {
+    // Check session on back button
+    fetch('check-session.php')
+        .then(response => response.json())
+        .then(data => {
+            if (!data.logged_in) {
+                window.location.href = 'login.php';
+            } else {
+                history.pushState(null, null, location.href);
+            }
+        });
+});
+</script>

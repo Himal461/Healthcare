@@ -223,10 +223,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
         
-        <div class="form-group">
-            <label>
+        <div class="terms-group">
+            <label class="terms-label">
                 <input type="checkbox" name="terms" required>
-                I agree to the <a href="#" target="_blank">Terms of Service</a> and <a href="#" target="_blank">Privacy Policy</a>
+                <span>I agree to the <a href="#" target="_blank">Terms of Service</a> and <a href="#" target="_blank">Privacy Policy</a></span>
             </label>
         </div>
         
@@ -239,105 +239,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </form>
 </div>
 
-<style>
-.form-container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 30px;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-}
-
-.form-container h2 {
-    color: #1a75bc;
-    text-align: center;
-    margin-bottom: 10px;
-}
-
-.form-container > p {
-    text-align: center;
-    color: #666;
-    margin-bottom: 30px;
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-}
-
-.form-group {
-    margin-bottom: 15px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 500;
-    color: #333;
-}
-
-.form-group input,
-.form-group select,
-.form-group textarea {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    font-size: 14px;
-}
-
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-    outline: none;
-    border-color: #1a75bc;
-}
-
-.form-group small {
-    color: #666;
-    font-size: 12px;
-    display: block;
-    margin-top: 5px;
-}
-
-.btn-block {
-    width: 100%;
-    margin-top: 10px;
-}
-
-.form-footer {
-    text-align: center;
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #e9ecef;
-}
-
-.form-footer p {
-    margin-bottom: 10px;
-}
-
-.form-footer a {
-    color: #1a75bc;
-    text-decoration: none;
-}
-
-.form-footer a:hover {
-    text-decoration: underline;
-}
-
-@media (max-width: 768px) {
-    .form-row {
-        grid-template-columns: 1fr;
-    }
-}
-</style>
-
 <script>
-document.getElementById('register-form').addEventListener('submit', function(e) {
+document.getElementById('register-form')?.addEventListener('submit', function(e) {
     const password = document.getElementById('password').value;
     const confirm = document.getElementById('confirm_password').value;
+    const termsCheckbox = document.querySelector('input[name="terms"]');
+    
+    if (!termsCheckbox.checked) {
+        e.preventDefault();
+        alert('Please agree to the Terms of Service and Privacy Policy');
+        return;
+    }
     
     if (password !== confirm) {
         e.preventDefault();

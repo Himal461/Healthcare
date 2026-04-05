@@ -157,19 +157,19 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
 
     <!-- Statistics -->
     <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card doctor">
             <h3><?php echo $todayAppointments; ?></h3>
             <p>Today's Appointments</p>
         </div>
-        <div class="stat-card">
+        <div class="stat-card doctor">
             <h3><?php echo count($upcomingAppointments); ?></h3>
             <p>Upcoming Appointments</p>
         </div>
-        <div class="stat-card">
+        <div class="stat-card doctor">
             <h3><?php echo $totalPatientsCount; ?></h3>
             <p>Total Patients</p>
         </div>
-        <div class="stat-card">
+        <div class="stat-card doctor">
             <h3><?php echo $doctor['specialization']; ?></h3>
             <p>Specialization</p>
         </div>
@@ -181,18 +181,18 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
             <h3>Schedule for <?php echo date('l, F j, Y', strtotime($selectedDate)); ?></h3>
         </div>
         <div class="card-body">
-            <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
-                <a href="?date=<?php echo date('Y-m-d', strtotime($selectedDate . ' -1 day')); ?>" class="btn">
+            <div class="date-navigation">
+                <a href="?date=<?php echo date('Y-m-d', strtotime($selectedDate . ' -1 day')); ?>" class="btn btn-outline">
                     <i class="fas fa-chevron-left"></i> Previous Day
                 </a>
                 <a href="?date=<?php echo date('Y-m-d'); ?>" class="btn btn-primary">Today</a>
-                <a href="?date=<?php echo date('Y-m-d', strtotime($selectedDate . ' +1 day')); ?>" class="btn">
+                <a href="?date=<?php echo date('Y-m-d', strtotime($selectedDate . ' +1 day')); ?>" class="btn btn-outline">
                     Next Day <i class="fas fa-chevron-right"></i>
                 </a>
             </div>
             
             <div class="table-container">
-                <table>
+                <table class="data-table">
                     <thead>
                         <tr>
                             <th>Time</th>
@@ -202,34 +202,33 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
                             <th>Reason</th>
                             <th>Status</th>
                             <th>Actions</th>
-                        </tr>
-                    </thead>
+                        </thead>
                     <tbody>
                         <?php if (empty($appointments)): ?>
-                            <tr>
-                                <td colspan="7" style="text-align: center;">No appointments scheduled for this day</td>
-                            </tr>
+                        汽
+                            <td colspan="7" style="text-align: center;">No appointments scheduled for this day</td>
+                        </tr>
                         <?php else: ?>
                             <?php foreach ($appointments as $appointment): 
                                 $age = $appointment['dateOfBirth'] ? date_diff(date_create($appointment['dateOfBirth']), date_create('today'))->y : 'N/A';
                             ?>
-                                <tr>
-                                    <td data-label="Time"><?php echo date('g:i A', strtotime($appointment['dateTime'])); ?></td>
-                                    <td data-label="Patient"><?php echo $appointment['firstName'] . ' ' . $appointment['lastName']; ?></td>
-                                    <td data-label="Age"><?php echo $age; ?></td>
-                                    <td data-label="Phone"><?php echo $appointment['phoneNumber']; ?></td>
-                                    <td data-label="Reason"><?php echo $appointment['reason'] ?: 'Not specified'; ?></td>
-                                    <td data-label="Status">
-                                        <span class="status-badge status-<?php echo $appointment['status']; ?>">
-                                            <?php echo ucfirst($appointment['status']); ?>
-                                        </span>
-                                    </td>
-                                    <td data-label="Actions">
-                                        <button class="btn btn-primary btn-sm" onclick="openUpdateModal(<?php echo $appointment['appointmentId']; ?>, '<?php echo $appointment['status']; ?>', `<?php echo addslashes($appointment['notes']); ?>`)">
-                                            <i class="fas fa-edit"></i> Update
-                                        </button>
-                                    </td>
-                                </tr>
+                            <tr>
+                                <td data-label="Time"><?php echo date('g:i A', strtotime($appointment['dateTime'])); ?></td>
+                                <td data-label="Patient"><?php echo $appointment['firstName'] . ' ' . $appointment['lastName']; ?></td>
+                                <td data-label="Age"><?php echo $age; ?></td>
+                                <td data-label="Phone"><?php echo $appointment['phoneNumber']; ?></td>
+                                <td data-label="Reason"><?php echo $appointment['reason'] ?: 'Not specified'; ?></td>
+                                <td data-label="Status">
+                                    <span class="status-badge status-<?php echo $appointment['status']; ?>">
+                                        <?php echo ucfirst($appointment['status']); ?>
+                                    </span>
+                                </td>
+                                <td data-label="Actions">
+                                    <button class="btn btn-primary btn-sm" onclick="openModal('updateModal'); document.getElementById('modal_appointment_id').value = <?php echo $appointment['appointmentId']; ?>; document.getElementById('modal_status').value = '<?php echo $appointment['status']; ?>'; document.getElementById('modal_notes').value = `<?php echo addslashes($appointment['notes']); ?>`;">
+                                        <i class="fas fa-edit"></i> Update
+                                    </button>
+                                </td>
+                            </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </tbody>
@@ -244,7 +243,7 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
             <h3>Upcoming Appointments</h3>
         </div>
         <div class="table-container">
-            <table>
+            <table class="data-table">
                 <thead>
                     <tr>
                         <th>Date & Time</th>
@@ -256,20 +255,20 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
                 </thead>
                 <tbody>
                     <?php if (empty($upcomingAppointments)): ?>
-                        <tr>
-                            <td colspan="5" style="text-align: center;">No upcoming appointments</td>
-                        </tr>
+                    <tr>
+                        <td colspan="5" style="text-align: center;">No upcoming appointments</td>
+                    </tr>
                     <?php else: ?>
                         <?php foreach ($upcomingAppointments as $appointment): 
                             $age = $appointment['dateOfBirth'] ? date_diff(date_create($appointment['dateOfBirth']), date_create('today'))->y : 'N/A';
                         ?>
-                            <tr>
-                                <td data-label="Date & Time"><?php echo date('M j, Y g:i A', strtotime($appointment['dateTime'])); ?></td>
-                                <td data-label="Patient"><?php echo $appointment['firstName'] . ' ' . $appointment['lastName']; ?></td>
-                                <td data-label="Age"><?php echo $age; ?></td>
-                                <td data-label="Blood Type"><?php echo $appointment['bloodType'] ?: 'Unknown'; ?></td>
-                                <td data-label="Contact"><?php echo $appointment['phoneNumber']; ?></td>
-                            </tr>
+                        <tr>
+                            <td data-label="Date & Time"><?php echo date('M j, Y g:i A', strtotime($appointment['dateTime'])); ?></td>
+                            <td data-label="Patient"><?php echo $appointment['firstName'] . ' ' . $appointment['lastName']; ?></td>
+                            <td data-label="Age"><?php echo $age; ?></td>
+                            <td data-label="Blood Type"><?php echo $appointment['bloodType'] ?: 'Unknown'; ?></td>
+                            <td data-label="Contact"><?php echo $appointment['phoneNumber']; ?></td>
+                        </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
@@ -291,24 +290,27 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
                         $currentAvailability = $availabilityByDay[$dayIndex] ?? null;
                     ?>
                         <div class="availability-day">
-                            <label>
+                            <label class="day-checkbox-label">
                                 <input type="checkbox" name="day_<?php echo $dayIndex; ?>_available" 
                                        <?php echo $currentAvailability ? 'checked' : ''; ?>>
-                                <?php echo $dayName; ?>
+                                <strong><?php echo $dayName; ?></strong>
                             </label>
-                            <div class="availability-times" style="margin-top: 5px; <?php echo !$currentAvailability ? 'display: none;' : ''; ?>">
-                                <input type="time" name="day_<?php echo $dayIndex; ?>_start" 
-                                       value="<?php echo $currentAvailability['startTime'] ?? WORKING_HOURS_START; ?>" 
-                                       style="width: 80px;">
-                                -
-                                <input type="time" name="day_<?php echo $dayIndex; ?>_end" 
-                                       value="<?php echo $currentAvailability['endTime'] ?? WORKING_HOURS_END; ?>" 
-                                       style="width: 80px;">
+                            <div class="availability-times" style="<?php echo !$currentAvailability ? 'display: none;' : ''; ?>">
+                                <div class="time-select">
+                                    <label>Start:</label>
+                                    <input type="time" name="day_<?php echo $dayIndex; ?>_start" 
+                                           value="<?php echo $currentAvailability['startTime'] ?? WORKING_HOURS_START; ?>">
+                                </div>
+                                <div class="time-select">
+                                    <label>End:</label>
+                                    <input type="time" name="day_<?php echo $dayIndex; ?>_end" 
+                                           value="<?php echo $currentAvailability['endTime'] ?? WORKING_HOURS_END; ?>">
+                                </div>
                             </div>
                         </div>
                     <?php endforeach; ?>
                 </div>
-                <button type="submit" name="update_availability" class="btn btn-primary" style="margin-top: 20px;">
+                <button type="submit" name="update_availability" class="btn btn-primary">
                     <i class="fas fa-save"></i> Save Availability
                 </button>
             </form>
@@ -321,7 +323,7 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
     <div class="modal-content">
         <div class="modal-header">
             <h3>Update Appointment</h3>
-            <button class="close-modal">&times;</button>
+            <span class="close" onclick="closeModal('updateModal')">&times;</span>
         </div>
         <form method="POST" action="">
             <div class="modal-body">
@@ -345,7 +347,7 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn" onclick="closeUpdateModal()">Cancel</button>
+                <button type="button" class="btn" onclick="closeModal('updateModal')">Cancel</button>
                 <button type="submit" name="update_status" class="btn btn-primary">Update</button>
             </div>
         </form>
@@ -353,34 +355,25 @@ $totalPatientsCount = $totalPatients->fetch()['count'];
 </div>
 
 <script>
-function openUpdateModal(appointmentId, status, notes) {
-    document.getElementById('modal_appointment_id').value = appointmentId;
-    document.getElementById('modal_status').value = status;
-    document.getElementById('modal_notes').value = notes || '';
-    document.getElementById('updateModal').style.display = 'flex';
-}
-
-function closeUpdateModal() {
-    document.getElementById('updateModal').style.display = 'none';
-}
-
 // Show/hide availability times based on checkbox
 document.querySelectorAll('input[type="checkbox"][name*="_available"]').forEach(checkbox => {
     checkbox.addEventListener('change', function() {
         const dayDiv = this.closest('.availability-day');
         const timesDiv = dayDiv.querySelector('.availability-times');
-        timesDiv.style.display = this.checked ? 'block' : 'none';
+        if (timesDiv) {
+            timesDiv.style.display = this.checked ? 'block' : 'none';
+        }
     });
 });
-
-// Close modal when clicking outside
-document.getElementById('updateModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        closeUpdateModal();
-    }
-});
-
-document.querySelector('.close-modal').addEventListener('click', closeUpdateModal);
 </script>
+
+<style>
+.date-navigation {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+</style>
 
 <?php include '../includes/footer.php'; ?>

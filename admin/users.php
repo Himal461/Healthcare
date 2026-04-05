@@ -57,7 +57,6 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         exit();
     } catch (Exception $e) {
         $error = "Failed to perform action. Please try again.";
-        error_log("User action error: " . $e->getMessage());
     }
 }
 
@@ -71,9 +70,14 @@ $query = "
     SELECT u.*, 
            p.dateOfBirth,
            p.bloodType,
+           p.address,
+           p.knownAllergies,
            d.specialization,
+           d.consultationFee,
            s.licenseNumber,
-           s.hireDate
+           s.hireDate,
+           s.department,
+           s.position
     FROM users u
     LEFT JOIN patients p ON u.userId = p.userId
     LEFT JOIN staff s ON u.userId = s.userId
@@ -123,24 +127,24 @@ $pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified 
     </div>
 
     <?php if (isset($error)): ?>
-        <div class="alert alert-error"><?php echo $error; ?></div>
+        <div class="alert alert-error"><?php echo htmlspecialchars($error); ?></div>
     <?php endif; ?>
 
     <!-- Users Statistics -->
     <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card admin">
             <h3><?php echo $totalUsers; ?></h3>
             <p>Total Users</p>
         </div>
-        <div class="stat-card">
+        <div class="stat-card admin">
             <h3><?php echo $totalDoctors; ?></h3>
             <p>Doctors</p>
         </div>
-        <div class="stat-card">
+        <div class="stat-card admin">
             <h3><?php echo $totalPatients; ?></h3>
             <p>Patients</p>
         </div>
-        <div class="stat-card">
+        <div class="stat-card admin">
             <h3><?php echo $pendingVerification; ?></h3>
             <p>Pending Verification</p>
         </div>
@@ -195,15 +199,15 @@ $pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified 
             <h3>All Users</h3>
         </div>
         <div class="table-container">
-            <table>
+            <table class="data-table">
                 <thead>
                     <tr>
                         <th>ID</th>
                         <th>Name</th>
                         <th>Email</th>
                         <th>Role</th>
+                        <th>Details</th>
                         <th>Status</th>
-                        <th>Registered</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -227,6 +231,35 @@ $pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified 
                                         <?php echo ucfirst($user['role']); ?>
                                     </span>
                                 </td>
+                                <td data-label="Details">
+                                    <?php if ($user['role'] === 'doctor'): ?>
+                                        <small>
+                                            <i class="fas fa-stethoscope"></i> <strong><?php echo htmlspecialchars($user['specialization'] ?? 'N/A'); ?></strong><br>
+                                            <i class="fas fa-dollar-sign"></i> $<?php echo number_format($user['consultationFee'] ?? 0, 2); ?><br>
+                                            <i class="fas fa-id-card"></i> License: <?php echo htmlspecialchars($user['licenseNumber'] ?? 'N/A'); ?>
+                                        </small>
+                                    <?php elseif ($user['role'] === 'nurse'): ?>
+                                        <small>
+                                            <i class="fas fa-heartbeat"></i> Nursing Staff<br>
+                                            <i class="fas fa-id-card"></i> License: <?php echo htmlspecialchars($user['licenseNumber'] ?? 'N/A'); ?>
+                                        </small>
+                                    <?php elseif ($user['role'] === 'staff'): ?>
+                                        <small>
+                                            <i class="fas fa-building"></i> <?php echo htmlspecialchars($user['department'] ?? 'N/A'); ?><br>
+                                            <i class="fas fa-briefcase"></i> <?php echo htmlspecialchars($user['position'] ?? 'N/A'); ?>
+                                        </small>
+                                    <?php elseif ($user['role'] === 'patient'): ?>
+                                        <small>
+                                            <i class="fas fa-tint"></i> Blood: <?php echo htmlspecialchars($user['bloodType'] ?? 'N/A'); ?><br>
+                                            <i class="fas fa-calendar"></i> DOB: <?php echo htmlspecialchars($user['dateOfBirth'] ?? 'N/A'); ?><br>
+                                            <i class="fas fa-allergies"></i> Allergies: <?php echo htmlspecialchars($user['knownAllergies'] ?? 'None'); ?>
+                                        </small>
+                                    <?php elseif ($user['role'] === 'admin'): ?>
+                                        <small>
+                                            <i class="fas fa-crown"></i> System Administrator
+                                        </small>
+                                    <?php endif; ?>
+                                </td>
                                 <td data-label="Status">
                                     <?php if ($user['isVerified']): ?>
                                         <span class="status-badge status-verified">Verified</span>
@@ -234,7 +267,6 @@ $pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified 
                                         <span class="status-badge status-unverified">Unverified</span>
                                     <?php endif; ?>
                                 </td>
-                                <td data-label="Registered"><?php echo date('M j, Y', strtotime($user['dateCreated'])); ?></td>
                                 <td data-label="Actions">
                                     <div class="action-buttons">
                                         <?php if (!$user['isVerified']): ?>
@@ -282,151 +314,6 @@ $pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified 
     </div>
 </div>
 
-<style>
-.filter-form {
-    margin: 0;
-}
-
-.filter-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr 2fr auto;
-    gap: 15px;
-    align-items: end;
-}
-
-.filter-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 500;
-    font-size: 12px;
-    color: #666;
-}
-
-.filter-group select,
-.filter-group input {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-}
-
-.filter-actions {
-    display: flex;
-    gap: 10px;
-}
-
-.filter-actions button,
-.filter-actions a {
-    padding: 10px 20px;
-}
-
-.role-badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.role-admin {
-    background: #dc3545;
-    color: white;
-}
-
-.role-doctor {
-    background: #007bff;
-    color: white;
-}
-
-.role-nurse {
-    background: #6f42c1;
-    color: white;
-}
-
-.role-staff {
-    background: #fd7e14;
-    color: white;
-}
-
-.role-patient {
-    background: #28a745;
-    color: white;
-}
-
-.status-badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.status-verified {
-    background: #d4edda;
-    color: #155724;
-}
-
-.status-unverified {
-    background: #f8d7da;
-    color: #721c24;
-}
-
-.action-buttons {
-    display: flex;
-    gap: 5px;
-    flex-wrap: wrap;
-}
-
-.btn-sm {
-    padding: 6px 10px;
-    font-size: 12px;
-}
-
-.dropdown {
-    position: relative;
-    display: inline-block;
-}
-
-.dropdown-menu {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    background: white;
-    min-width: 100px;
-    border-radius: 8px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.15);
-    z-index: 1000;
-    margin-top: 5px;
-}
-
-.dropdown-menu.show {
-    display: block;
-}
-
-.dropdown-item {
-    display: block;
-    padding: 8px 15px;
-    text-decoration: none;
-    color: #333;
-    transition: background 0.3s ease;
-}
-
-.dropdown-item:hover {
-    background: #f8f9fa;
-}
-
-@media (max-width: 768px) {
-    .filter-row {
-        grid-template-columns: 1fr;
-    }
-    
-    .filter-actions {
-        grid-column: 1;
-    }
-}
-</style>
-
 <script>
 // Dropdown functionality
 document.querySelectorAll('.dropdown-toggle').forEach(button => {
@@ -437,7 +324,6 @@ document.querySelectorAll('.dropdown-toggle').forEach(button => {
         const dropdownId = this.getAttribute('data-dropdown');
         const dropdown = document.getElementById(dropdownId);
         
-        // Close all other dropdowns
         document.querySelectorAll('.dropdown-menu').forEach(menu => {
             if (menu.id !== dropdownId) {
                 menu.classList.remove('show');
@@ -448,7 +334,6 @@ document.querySelectorAll('.dropdown-toggle').forEach(button => {
     });
 });
 
-// Close dropdown when clicking outside
 document.addEventListener('click', function(e) {
     if (!e.target.closest('.dropdown')) {
         document.querySelectorAll('.dropdown-menu').forEach(menu => {

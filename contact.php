@@ -20,17 +20,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = "Please enter a valid email address.";
     } else {
         // Send email to admin
-        $adminEmail = SMTP_FROM;
+        $adminEmail = "himalkumarkari@gmail.com";
         $emailSubject = "Contact Form: " . $subject;
         $emailMessage = "
             <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: #1a75bc; color: white; padding: 20px; text-align: center; }
+                    .content { padding: 20px; background: #f9f9f9; }
+                    .field { margin-bottom: 15px; }
+                    .field strong { display: inline-block; width: 100px; }
+                </style>
+            </head>
             <body>
-                <h2>New Contact Form Submission</h2>
-                <p><strong>Name:</strong> $name</p>
-                <p><strong>Email:</strong> $email</p>
-                <p><strong>Subject:</strong> $subject</p>
-                <p><strong>Message:</strong></p>
-                <p>$message</p>
+                <div class='container'>
+                    <div class='header'>
+                        <h2>New Contact Form Submission</h2>
+                    </div>
+                    <div class='content'>
+                        <div class='field'><strong>Name:</strong> $name</div>
+                        <div class='field'><strong>Email:</strong> $email</div>
+                        <div class='field'><strong>Subject:</strong> $subject</div>
+                        <div class='field'><strong>Message:</strong></div>
+                        <p>$message</p>
+                    </div>
+                </div>
             </body>
             </html>
         ";
@@ -63,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-map-marker-alt"></i>
                         <div>
                             <h3>Visit Us</h3>
-                            <p>123 Medical Drive, Health City, HC 12345</p>
+                            <p>Fussel Lane, Gungahlin, ACT 2912, Australia</p>
                         </div>
                     </div>
                     
@@ -71,8 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-phone"></i>
                         <div>
                             <h3>Call Us</h3>
-                            <p>Main: (555) 123-4567</p>
-                            <p>Emergency: (555) 123-4568</p>
+                            <p>Main: <a href="tel:+614383473483">+61 438 347 3483</a></p>
+                            <p>Emergency: <a href="tel:+614552627">+61 455 2627</a></p>
                         </div>
                     </div>
                     
@@ -80,8 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fas fa-envelope"></i>
                         <div>
                             <h3>Email Us</h3>
-                            <p>info@healthmanagement.com</p>
-                            <p>support@healthmanagement.com</p>
+                            <p><a href="mailto:himalkumarkari@gmail.com">himalkumarkari@gmail.com</a></p>
+                            <p><a href="mailto:abinashcarkee@gmail.com">abinashcarkee@gmail.com</a></p>
                         </div>
                     </div>
                     
@@ -92,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <p>Monday - Friday: 9:00 AM - 5:00 PM</p>
                             <p>Saturday: 9:00 AM - 1:00 PM</p>
                             <p>Sunday: Closed</p>
-                            <p>Emergency: 24/7</p>
+                            <p><strong>Emergency: 24/7</strong></p>
                         </div>
                     </div>
                 </div>
@@ -122,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 <?php endif; ?>
                 
-                <form method="POST" action="">
+                <form method="POST" action="" id="contact-form">
                     <div class="form-group">
                         <label for="name">Your Name *</label>
                         <input type="text" id="name" name="name" required>
@@ -153,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <section class="map-section">
     <div class="container">
         <iframe 
-            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3024.2219901290355!2d-74.00369368400567!3d40.71312937933153!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89c25a316bb1dd1b%3A0xc89c7f8e3d4d6d2e!2sWall%20Street!5e0!3m2!1sen!2sus!4v1699999999999!5m2!1sen!2sus" 
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3254.728641732676!2d149.1345983152368!3d-35.18495568029428!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x6b1650d4f6e6d6a1%3A0x2e3b8e6e5c0f7f5!2sGungahlin%20ACT%202912!5e0!3m2!1sen!2sau!4v1699999999999!5m2!1sen!2sau" 
             width="100%" 
             height="400" 
             style="border:0; border-radius: 12px;" 
@@ -163,19 +179,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 </section>
 
+<script>
+document.getElementById('contact-form')?.addEventListener('submit', function(e) {
+    const email = document.getElementById('email').value;
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+    if (!emailPattern.test(email)) {
+        e.preventDefault();
+        alert('Please enter a valid email address.');
+    }
+});
+</script>
+
 <style>
-.page-header {
-    background: linear-gradient(135deg, #1a75bc 0%, #0a4299 100%);
-    color: white;
-    padding: 60px 0;
-    text-align: center;
-}
-
-.page-header h1 {
-    font-size: 48px;
-    margin-bottom: 15px;
-}
-
 .contact-section {
     padding: 60px 0;
     background: #f8f9fa;
@@ -187,28 +203,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     gap: 40px;
 }
 
-.contact-info,
-.contact-form {
+.contact-info {
     background: white;
-    padding: 40px;
+    padding: 30px;
     border-radius: 12px;
-    box-shadow: 0 3px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
-.contact-info h2,
-.contact-form h2 {
+.contact-info h2 {
     color: #1a75bc;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
+}
+
+.contact-info > p {
+    color: #666;
+    margin-bottom: 30px;
+    line-height: 1.6;
 }
 
 .info-details {
-    margin: 30px 0;
+    margin-bottom: 30px;
 }
 
 .info-item {
     display: flex;
     gap: 15px;
     margin-bottom: 25px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.info-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
 }
 
 .info-item i {
@@ -218,14 +245,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 .info-item h3 {
+    margin: 0 0 8px 0;
     font-size: 16px;
-    margin-bottom: 5px;
     color: #333;
 }
 
 .info-item p {
+    margin: 5px 0;
     color: #666;
-    margin: 0;
+}
+
+.info-item a {
+    color: #1a75bc;
+    text-decoration: none;
+}
+
+.info-item a:hover {
+    text-decoration: underline;
 }
 
 .social-links {
@@ -249,7 +285,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 .social-link:hover {
     background: #1a75bc;
     color: white;
-    transform: translateY(-2px);
+    transform: translateY(-3px);
+}
+
+.contact-form {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.contact-form h2 {
+    color: #1a75bc;
+    margin-bottom: 20px;
 }
 
 .form-group {
@@ -259,18 +307,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 .form-group label {
     display: block;
     margin-bottom: 8px;
-    font-weight: 500;
-    color: #333;
+    font-weight: 600;
+    color: #495057;
 }
 
 .form-group input,
 .form-group textarea {
     width: 100%;
-    padding: 12px;
+    padding: 10px 12px;
     border: 1px solid #ddd;
-    border-radius: 8px;
+    border-radius: 5px;
     font-size: 14px;
-    transition: border-color 0.3s ease;
+    transition: border-color 0.3s;
 }
 
 .form-group input:focus,
@@ -291,6 +339,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 @media (max-width: 768px) {
     .contact-grid {
         grid-template-columns: 1fr;
+        gap: 30px;
     }
     
     .info-item {
@@ -298,8 +347,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         text-align: center;
     }
     
-    .social-links {
-        justify-content: center;
+    .info-item i {
+        margin: 0 auto 10px;
     }
 }
 </style>

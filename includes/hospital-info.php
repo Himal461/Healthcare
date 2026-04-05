@@ -1,0 +1,72 @@
+<?php
+// Hospital contact information
+define('HOSPITAL_NAME', 'HealthManagement System');
+define('HOSPITAL_ADDRESS', 'Fussel Lane, Gungahlin, ACT 2912, Australia');
+define('HOSPITAL_PHONE', '+61 438 347 3483');
+define('HOSPITAL_EMERGENCY', '+61 455 2627');
+define('HOSPITAL_EMAIL_PRIMARY', 'himalkumarkari@gmail.com');
+define('HOSPITAL_EMAIL_SECONDARY', 'abinashcarkee@gmail.com');
+define('HOSPITAL_HOURS_WEEKDAY', '9:00 AM - 5:00 PM');
+define('HOSPITAL_HOURS_SATURDAY', '9:00 AM - 1:00 PM');
+define('HOSPITAL_HOURS_SUNDAY', 'Closed');
+define('HOSPITAL_EMERGENCY_HOURS', '24/7');
+?>
+
+<!-- Hospital Info Component -->
+<div class="hospital-info-card">
+    <h3><?php echo HOSPITAL_NAME; ?></h3>
+    <p><i class="fas fa-map-marker-alt"></i> <?php echo HOSPITAL_ADDRESS; ?></p>
+    <p><i class="fas fa-phone"></i> Main: <a href="tel:<?php echo HOSPITAL_PHONE; ?>"><?php echo HOSPITAL_PHONE; ?></a></p>
+    <p><i class="fas fa-ambulance"></i> Emergency: <a href="tel:<?php echo HOSPITAL_EMERGENCY; ?>"><?php echo HOSPITAL_EMERGENCY; ?></a></p>
+    <p><i class="fas fa-envelope"></i> Email: <a href="mailto:<?php echo HOSPITAL_EMAIL_PRIMARY; ?>"><?php echo HOSPITAL_EMAIL_PRIMARY; ?></a> | <a href="mailto:<?php echo HOSPITAL_EMAIL_SECONDARY; ?>"><?php echo HOSPITAL_EMAIL_SECONDARY; ?></a></p>
+</div>
+
+<style>
+.hospital-info-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.hospital-info-card h3 {
+    margin: 0 0 15px 0;
+    font-size: 24px;
+}
+
+.hospital-info-card p {
+    margin: 8px 0;
+    font-size: 14px;
+}
+
+.hospital-info-card i {
+    margin-right: 8px;
+    width: 20px;
+}
+
+.hospital-info-card a {
+    color: white;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(255,255,255,0.5);
+}
+
+.hospital-info-card a:hover {
+    border-bottom-color: white;
+}
+
+@media (max-width: 768px) {
+    .hospital-info-card {
+        padding: 15px;
+    }
+    
+    .hospital-info-card h3 {
+        font-size: 20px;
+    }
+    
+    .hospital-info-card p {
+        font-size: 12px;
+    }
+}
+</style>
