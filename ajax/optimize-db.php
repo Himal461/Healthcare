@@ -10,7 +10,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['user_role'] !== 'admin') {
 }
 
 try {
-    // Get all tables
     $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
     $optimized = [];
     
@@ -20,9 +19,7 @@ try {
     }
     
     logAction($_SESSION['user_id'], 'OPTIMIZE_DATABASE', "Optimized tables: " . implode(', ', $optimized));
-    
     echo json_encode(['success' => true, 'tables' => $optimized]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
-?>

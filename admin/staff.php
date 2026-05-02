@@ -4,537 +4,559 @@ require_once '../includes/auth.php';
 checkRole('admin');
 
 $pageTitle = "Manage Staff - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="../css/admin.css">';
+$extraJS = '<script src="../js/admin.js"></script>';
 include '../includes/header.php';
 
-// Handle staff creation
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_staff'])) {
-    $username = sanitizeInput($_POST['username']);
-    $email = sanitizeInput($_POST['email']);
-    $password = $_POST['password'];
-    $confirmPassword = $_POST['confirm_password'];
-    $firstName = sanitizeInput($_POST['first_name']);
-    $lastName = sanitizeInput($_POST['last_name']);
-    $phoneNumber = sanitizeInput($_POST['phone_number']);
-    $staffRole = $_POST['staff_role'];
-    $position = sanitizeInput($_POST['position']);
-    $department = sanitizeInput($_POST['department']);
-    $licenseNumber = sanitizeInput($_POST['license_number']);
-    $hireDate = $_POST['hire_date'];
-    
-    if ($password !== $confirmPassword) {
-        $error = "Passwords do not match.";
-    } elseif (strlen($password) < 8) {
-        $error = "Password must be at least 8 characters long.";
-    } else {
-        $stmt = $pdo->prepare("SELECT userId FROM users WHERE username = ? OR email = ?");
-        $stmt->execute([$username, $email]);
-        
-        if ($stmt->fetch()) {
-            $error = "Username or email already exists.";
-        } else {
-            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-            
-            try {
-                $pdo->beginTransaction();
-                
-                $stmt = $pdo->prepare("INSERT INTO users (username, passwordHash, email, firstName, lastName, phoneNumber, role, isVerified, dateCreated) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())");
-                $stmt->execute([$username, $passwordHash, $email, $firstName, $lastName, $phoneNumber, $staffRole]);
-                $userId = $pdo->lastInsertId();
-                
-                $stmt = $pdo->prepare("INSERT INTO staff (userId, licenseNumber, hireDate, department, position) VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$userId, $licenseNumber, $hireDate, $department, $position]);
-                $staffId = $pdo->lastInsertId();
-                
-                if ($staffRole === 'doctor') {
-                    $specialization = sanitizeInput($_POST['specialization']);
-                    $consultationFee = floatval($_POST['consultation_fee']);
-                    $yearsOfExperience = intval($_POST['years_of_experience']);
-                    $education = sanitizeInput($_POST['education']);
-                    $biography = sanitizeInput($_POST['biography']);
-                    
-                    $stmt = $pdo->prepare("INSERT INTO doctors (staffId, specialization, consultationFee, yearsOfExperience, education, biography, isAvailable) VALUES (?, ?, ?, ?, ?, ?, 1)");
-                    $stmt->execute([$staffId, $specialization, $consultationFee, $yearsOfExperience, $education, $biography]);
-                    
-                } elseif ($staffRole === 'nurse') {
-                    $nursingSpecialty = sanitizeInput($_POST['nursing_specialty']);
-                    $certification = sanitizeInput($_POST['certification']);
-                    
-                    $stmt = $pdo->prepare("INSERT INTO nurses (staffId, nursingSpecialty, certification) VALUES (?, ?, ?)");
-                    $stmt->execute([$staffId, $nursingSpecialty, $certification]);
-                }
-                
-                $pdo->commit();
-                $_SESSION['success'] = "Staff member created successfully!";
-                logAction($_SESSION['user_id'], 'CREATE_STAFF', "Created new $staffRole: $username");
-                header("Location: staff.php");
-                exit();
-                
-            } catch (Exception $e) {
-                $pdo->rollBack();
-                $error = "Failed to create staff: " . $e->getMessage();
-            }
-        }
-    }
-}
-
-// Handle staff update
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_staff'])) {
-    $staffId = $_POST['staff_id'];
-    $userId = $_POST['user_id'];
-    $firstName = sanitizeInput($_POST['first_name']);
-    $lastName = sanitizeInput($_POST['last_name']);
-    $email = sanitizeInput($_POST['email']);
-    $phoneNumber = sanitizeInput($_POST['phone_number']);
-    $licenseNumber = sanitizeInput($_POST['license_number']);
-    $department = sanitizeInput($_POST['department']);
-    $position = sanitizeInput($_POST['position']);
-    $staffRole = $_POST['staff_role'];
-    
-    try {
-        $pdo->beginTransaction();
-        
-        $stmt = $pdo->prepare("UPDATE users SET firstName = ?, lastName = ?, email = ?, phoneNumber = ? WHERE userId = ?");
-        $stmt->execute([$firstName, $lastName, $email, $phoneNumber, $userId]);
-        
-        $stmt = $pdo->prepare("UPDATE staff SET licenseNumber = ?, department = ?, position = ? WHERE staffId = ?");
-        $stmt->execute([$licenseNumber, $department, $position, $staffId]);
-        
-        if ($staffRole === 'doctor') {
-            $specialization = sanitizeInput($_POST['specialization']);
-            $consultationFee = floatval($_POST['consultation_fee']);
-            $yearsOfExperience = intval($_POST['years_of_experience']);
-            $education = sanitizeInput($_POST['education']);
-            $biography = sanitizeInput($_POST['biography']);
-            $isAvailable = isset($_POST['is_available']) ? 1 : 0;
-            
-            $stmt = $pdo->prepare("UPDATE doctors SET specialization = ?, consultationFee = ?, yearsOfExperience = ?, education = ?, biography = ?, isAvailable = ? WHERE staffId = ?");
-            $stmt->execute([$specialization, $consultationFee, $yearsOfExperience, $education, $biography, $isAvailable, $staffId]);
-            
-        } elseif ($staffRole === 'nurse') {
-            $nursingSpecialty = sanitizeInput($_POST['nursing_specialty']);
-            $certification = sanitizeInput($_POST['certification']);
-            
-            $stmt = $pdo->prepare("UPDATE nurses SET nursingSpecialty = ?, certification = ? WHERE staffId = ?");
-            $stmt->execute([$nursingSpecialty, $certification, $staffId]);
-        }
-        
-        $pdo->commit();
-        $_SESSION['success'] = "Staff member updated successfully!";
-        logAction($_SESSION['user_id'], 'UPDATE_STAFF', "Updated staff ID: $staffId");
-        header("Location: staff.php");
-        exit();
-        
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $error = "Failed to update staff: " . $e->getMessage();
-    }
-}
-
-// Handle staff deletion
+// Handle delete
 if (isset($_GET['delete'])) {
-    $staffId = $_GET['delete'];
+    $staffId = (int)$_GET['delete'];
     try {
-        $stmt = $pdo->prepare("DELETE FROM staff WHERE staffId = ?");
+        $stmt = $pdo->prepare("
+            SELECT u.userId, u.firstName, u.lastName, u.role 
+            FROM users u 
+            JOIN staff s ON u.userId = s.userId 
+            WHERE s.staffId = ?
+        ");
         $stmt->execute([$staffId]);
-        $_SESSION['success'] = "Staff member deleted successfully!";
-        header("Location: staff.php");
-        exit();
+        $user = $stmt->fetch();
+        
+        if ($user) {
+            $stmt = $pdo->prepare("DELETE FROM staff WHERE staffId = ?");
+            $stmt->execute([$staffId]);
+            
+            $stmt = $pdo->prepare("DELETE FROM users WHERE userId = ?");
+            $stmt->execute([$user['userId']]);
+            
+            $_SESSION['success'] = "Staff member '{$user['firstName']} {$user['lastName']}' deleted successfully!";
+            logAction($_SESSION['user_id'], 'DELETE_STAFF', "Deleted staff ID: {$staffId}");
+        } else {
+            $_SESSION['error'] = "Staff member not found.";
+        }
     } catch (Exception $e) {
-        $error = "Failed to delete staff.";
+        $_SESSION['error'] = "Failed to delete staff: " . $e->getMessage();
     }
+    header("Location: staff.php");
+    exit();
 }
 
-// Get all staff members
+$success = $_SESSION['success'] ?? null;
+$error = $_SESSION['error'] ?? null;
+$formData = $_SESSION['form_data'] ?? [];
+unset($_SESSION['success'], $_SESSION['error'], $_SESSION['form_data']);
+
+// Get all staff with salary
 $staff = $pdo->query("
-    SELECT s.*, u.userId, u.username, u.firstName, u.lastName, u.email, u.phoneNumber, u.role,
+    SELECT s.*, u.userId, u.username, u.firstName, u.lastName, u.email, u.phoneNumber, u.role, u.dateCreated,
            d.specialization, d.consultationFee, d.yearsOfExperience, d.education, d.biography, d.isAvailable,
-           n.nursingSpecialty, n.certification
+           n.nursingSpecialty, n.certification,
+           a.qualification, a.certification as accountant_cert, a.specialization as accountant_specialization, 
+           a.yearsOfExperience as accountant_experience,
+           COALESCE(s.salary, 2500.00) as salary
     FROM staff s
     JOIN users u ON s.userId = u.userId
     LEFT JOIN doctors d ON s.staffId = d.staffId
     LEFT JOIN nurses n ON s.staffId = n.staffId
-    WHERE u.role IN ('doctor', 'nurse', 'staff')
-    ORDER BY u.role, u.firstName
+    LEFT JOIN accountants a ON s.staffId = a.staffId
+    WHERE u.role IN ('doctor', 'nurse', 'staff', 'admin', 'accountant')
+    ORDER BY FIELD(u.role, 'admin', 'doctor', 'nurse', 'accountant', 'staff'), u.firstName, u.lastName
 ")->fetchAll();
 
-// Get departments
-$departments = $pdo->query("SELECT DISTINCT name FROM departments WHERE isActive = 1")->fetchAll();
+$departments = $pdo->query("SELECT DISTINCT name FROM departments WHERE isActive = 1 ORDER BY name")->fetchAll();
+$staffByRole = [];
+foreach ($staff as $member) {
+    $staffByRole[$member['role']][] = $member;
+}
+$roleOrder = ['admin', 'doctor', 'nurse', 'accountant', 'staff'];
+$roleIcons = [
+    'admin' => 'fa-crown',
+    'doctor' => 'fa-user-md',
+    'nurse' => 'fa-user-nurse',
+    'accountant' => 'fa-calculator',
+    'staff' => 'fa-user-tie'
+];
 ?>
 
-<div class="dashboard">
-    <div class="dashboard-header">
-        <h1>Manage Staff</h1>
-        <p>Add and manage doctors, nurses, and support staff</p>
+<div class="admin-container">
+    <div class="admin-page-header">
+        <div class="header-title">
+            <h1><i class="fas fa-user-md"></i> Manage Staff</h1>
+            <p>Add and manage doctors, nurses, accountants, and support staff</p>
+        </div>
     </div>
 
-    <?php if (isset($error)): ?>
-        <div class="alert alert-error"><?php echo $error; ?></div>
+    <?php if ($error): ?>
+        <div class="admin-alert admin-alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="admin-alert admin-alert-success">
+            <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+        </div>
     <?php endif; ?>
 
     <!-- Create Staff Form -->
-    <div class="card">
-        <div class="card-header">
-            <h3>Add New Staff Member</h3>
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3><i class="fas fa-user-plus"></i> Add New Staff Member</h3>
         </div>
-        <div class="card-body">
-            <form method="POST" action="" id="staff-form">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="first_name">First Name *</label>
-                        <input type="text" id="first_name" name="first_name" required>
+        <div class="admin-card-body">
+            <form method="POST" action="create-staff.php" id="create-staff-form">
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>First Name <span class="required">*</span></label>
+                        <input type="text" name="first_name" class="admin-form-control" required value="<?php echo htmlspecialchars($formData['first_name'] ?? ''); ?>">
                     </div>
-                    <div class="form-group">
-                        <label for="last_name">Last Name *</label>
-                        <input type="text" id="last_name" name="last_name" required>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="username">Username *</label>
-                        <input type="text" id="username" name="username" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="email">Email *</label>
-                        <input type="email" id="email" name="email" required>
+                    <div class="admin-form-group">
+                        <label>Last Name <span class="required">*</span></label>
+                        <input type="text" name="last_name" class="admin-form-control" required value="<?php echo htmlspecialchars($formData['last_name'] ?? ''); ?>">
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="phone_number">Phone Number</label>
-                        <input type="tel" id="phone_number" name="phone_number">
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Username <span class="required">*</span></label>
+                        <input type="text" name="username" class="admin-form-control" required value="<?php echo htmlspecialchars($formData['username'] ?? ''); ?>">
                     </div>
-                    <div class="form-group">
-                        <label for="staff_role">Staff Role *</label>
-                        <select id="staff_role" name="staff_role" required onchange="toggleRoleFields()">
-                            <option value="doctor">Doctor</option>
-                            <option value="nurse">Nurse</option>
-                            <option value="staff">Support Staff</option>
+                    <div class="admin-form-group">
+                        <label>Email <span class="required">*</span></label>
+                        <input type="email" name="email" class="admin-form-control" required value="<?php echo htmlspecialchars($formData['email'] ?? ''); ?>">
+                    </div>
+                </div>
+                
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Phone Number</label>
+                        <input type="tel" name="phone_number" class="admin-form-control" value="<?php echo htmlspecialchars($formData['phone_number'] ?? ''); ?>">
+                    </div>
+                    <div class="admin-form-group">
+                        <label>Staff Role <span class="required">*</span></label>
+                        <select name="staff_role" id="staff_role" class="admin-form-control" required onchange="toggleRoleForm()">
+                            <option value="">-- Select Role --</option>
+                            <option value="staff" <?php echo ($formData['staff_role'] ?? '') == 'staff' ? 'selected' : ''; ?>>Support Staff</option>
+                            <option value="nurse" <?php echo ($formData['staff_role'] ?? '') == 'nurse' ? 'selected' : ''; ?>>Nurse</option>
+                            <option value="doctor" <?php echo ($formData['staff_role'] ?? '') == 'doctor' ? 'selected' : ''; ?>>Doctor</option>
+                            <option value="accountant" <?php echo ($formData['staff_role'] ?? '') == 'accountant' ? 'selected' : ''; ?>>Accountant</option>
+                            <option value="admin" <?php echo ($formData['staff_role'] ?? '') == 'admin' ? 'selected' : ''; ?>>Administrator</option>
                         </select>
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="password">Password *</label>
-                        <input type="password" id="password" name="password" required>
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Password <span class="required">*</span></label>
+                        <input type="password" name="password" class="admin-form-control" required>
                         <small>Minimum 8 characters</small>
                     </div>
-                    <div class="form-group">
-                        <label for="confirm_password">Confirm Password *</label>
-                        <input type="password" id="confirm_password" name="confirm_password" required>
+                    <div class="admin-form-group">
+                        <label>Confirm Password <span class="required">*</span></label>
+                        <input type="password" name="confirm_password" class="admin-form-control" required>
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="license_number">License/Certificate Number</label>
-                        <input type="text" id="license_number" name="license_number">
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>License/Certificate Number</label>
+                        <input type="text" name="license_number" class="admin-form-control" value="<?php echo htmlspecialchars($formData['license_number'] ?? ''); ?>">
                     </div>
-                    <div class="form-group">
-                        <label for="hire_date">Hire Date</label>
-                        <input type="date" id="hire_date" name="hire_date" value="<?php echo date('Y-m-d'); ?>">
+                    <div class="admin-form-group">
+                        <label>Hire Date</label>
+                        <input type="date" name="hire_date" class="admin-form-control" value="<?php echo htmlspecialchars($formData['hire_date'] ?? date('Y-m-d')); ?>">
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="department">Department</label>
-                        <select id="department" name="department">
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Department</label>
+                        <select name="department" class="admin-form-control">
                             <option value="">Select Department</option>
+                            <option value="Finance" <?php echo ($formData['department'] ?? '') == 'Finance' ? 'selected' : ''; ?>>Finance</option>
                             <?php foreach ($departments as $dept): ?>
-                                <option value="<?php echo $dept['name']; ?>"><?php echo $dept['name']; ?></option>
+                                <option value="<?php echo htmlspecialchars($dept['name']); ?>" <?php echo ($formData['department'] ?? '') == $dept['name'] ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($dept['name']); ?>
+                                </option>
                             <?php endforeach; ?>
-                            <option value="Other">Other</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="position">Position Title</label>
-                        <input type="text" id="position" name="position" placeholder="e.g., Senior Cardiologist, Registered Nurse">
+                    <div class="admin-form-group">
+                        <label>Position Title</label>
+                        <input type="text" name="position" id="position" class="admin-form-control" value="<?php echo htmlspecialchars($formData['position'] ?? ''); ?>" placeholder="e.g., Senior Accountant">
                     </div>
                 </div>
                 
-                <!-- Doctor Specific Fields -->
-                <div id="doctor-fields" class="role-fields">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="specialization">Specialization *</label>
-                            <input type="text" id="specialization" name="specialization" placeholder="e.g., Cardiology, Neurology">
-                        </div>
-                        <div class="form-group">
-                            <label for="consultation_fee">Consultation Fee ($) *</label>
-                            <input type="number" id="consultation_fee" name="consultation_fee" step="10" value="150">
-                        </div>
+                <!-- SALARY FIELD ADDED -->
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Base Salary ($) <span class="required">*</span></label>
+                        <input type="number" name="salary" class="admin-form-control" step="0.01" min="0" 
+                               value="<?php echo htmlspecialchars($formData['salary'] ?? '2500.00'); ?>" required>
+                        <small>Fixed monthly salary</small>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="years_of_experience">Years of Experience</label>
-                            <input type="number" id="years_of_experience" name="years_of_experience">
-                        </div>
-                        <div class="form-group">
-                            <label for="education">Education & Qualifications</label>
-                            <input type="text" id="education" name="education" placeholder="MD, PhD, etc.">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="biography">Professional Biography</label>
-                        <textarea id="biography" name="biography" rows="3" placeholder="Professional background, achievements, etc."></textarea>
+                    <div class="admin-form-group">
+                        <!-- Empty div for layout balance -->
                     </div>
                 </div>
                 
-                <!-- Nurse Specific Fields -->
-                <div id="nurse-fields" class="role-fields" style="display: none;">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="nursing_specialty">Nursing Specialty *</label>
-                            <input type="text" id="nursing_specialty" name="nursing_specialty" placeholder="e.g., Cardiac Care, Emergency, Pediatrics">
+                <!-- Doctor Fields -->
+                <div id="doctor-fields" style="display: none;">
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Specialization</label>
+                            <input type="text" name="specialization" class="admin-form-control" value="<?php echo htmlspecialchars($formData['specialization'] ?? ''); ?>" placeholder="e.g., Cardiology">
                         </div>
-                        <div class="form-group">
-                            <label for="certification">Certification</label>
-                            <input type="text" id="certification" name="certification" placeholder="e.g., CCRN, ACLS, BLS">
+                        <div class="admin-form-group">
+                            <label>Consultation Fee ($)</label>
+                            <input type="number" name="consultation_fee" class="admin-form-control" step="10" value="<?php echo htmlspecialchars($formData['consultation_fee'] ?? '150'); ?>">
+                        </div>
+                    </div>
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Years of Experience</label>
+                            <input type="number" name="years_of_experience" class="admin-form-control" value="<?php echo htmlspecialchars($formData['years_of_experience'] ?? ''); ?>">
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Education & Qualifications</label>
+                            <input type="text" name="education" class="admin-form-control" value="<?php echo htmlspecialchars($formData['education'] ?? ''); ?>">
+                        </div>
+                    </div>
+                    <div class="admin-form-group">
+                        <label>Professional Biography</label>
+                        <textarea name="biography" rows="3" class="admin-form-control"><?php echo htmlspecialchars($formData['biography'] ?? ''); ?></textarea>
+                    </div>
+                </div>
+                
+                <!-- Nurse Fields -->
+                <div id="nurse-fields" style="display: none;">
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Nursing Specialty</label>
+                            <input type="text" name="nursing_specialty" class="admin-form-control" value="<?php echo htmlspecialchars($formData['nursing_specialty'] ?? ''); ?>">
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Certification</label>
+                            <input type="text" name="certification" class="admin-form-control" value="<?php echo htmlspecialchars($formData['certification'] ?? ''); ?>">
                         </div>
                     </div>
                 </div>
                 
-                <!-- Support Staff Fields -->
-                <div id="staff-fields" class="role-fields" style="display: none;">
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i> Support staff will have access to basic system features.
+                <!-- Accountant Fields -->
+                <div id="accountant-fields" style="display: none;">
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Qualification</label>
+                            <input type="text" name="qualification" class="admin-form-control" value="<?php echo htmlspecialchars($formData['qualification'] ?? ''); ?>" placeholder="e.g., CPA, MBA Finance">
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Certification</label>
+                            <input type="text" name="accountant_certification" class="admin-form-control" value="<?php echo htmlspecialchars($formData['accountant_certification'] ?? ''); ?>" placeholder="e.g., Certified Public Accountant">
+                        </div>
+                    </div>
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Specialization</label>
+                            <input type="text" name="accountant_specialization" class="admin-form-control" value="<?php echo htmlspecialchars($formData['accountant_specialization'] ?? 'General Accounting'); ?>" placeholder="e.g., Healthcare Finance">
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Years of Experience</label>
+                            <input type="number" name="accountant_experience" class="admin-form-control" value="<?php echo htmlspecialchars($formData['accountant_experience'] ?? '0'); ?>">
+                        </div>
                     </div>
                 </div>
                 
-                <button type="submit" name="create_staff" class="btn btn-primary">Add Staff Member</button>
+                <!-- Admin Fields -->
+                <div id="admin-fields" style="display: none;">
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Admin Level</label>
+                            <select name="admin_level" class="admin-form-control">
+                                <option value="regular" <?php echo ($formData['admin_level'] ?? '') == 'regular' ? 'selected' : ''; ?>>Regular Admin</option>
+                                <option value="super" <?php echo ($formData['admin_level'] ?? '') == 'super' ? 'selected' : ''; ?>>Super Admin</option>
+                            </select>
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Permissions (JSON)</label>
+                            <input type="text" name="permissions" class="admin-form-control" value="<?php echo htmlspecialchars($formData['permissions'] ?? '{"all":true}'); ?>" placeholder='{"all":true}'>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="admin-btn admin-btn-primary">
+                    <i class="fas fa-save"></i> Add Staff Member
+                </button>
             </form>
         </div>
     </div>
 
     <!-- Staff List -->
-    <div class="card">
-        <div class="card-header">
-            <h3>All Staff Members</h3>
-        </div>
-        <div class="table-container">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Name</th>
-                        <th>Role</th>
-                        <th>Department</th>
-                        <th>Details</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($staff as $member): ?>
-                    <tr>
-                        <td data-label="ID">#<?php echo $member['staffId']; ?></td>
-                        <td data-label="Name">
-                            <strong><?php echo $member['firstName'] . ' ' . $member['lastName']; ?></strong><br>
-                            <small><?php echo $member['email']; ?></small>
-                        </td>
-                        <td data-label="Role">
-                            <span class="role-badge role-<?php echo $member['role']; ?>">
-                                <?php echo ucfirst($member['role']); ?>
-                            </span>
-                        </td>
-                        <td data-label="Department">
-                            <?php echo $member['department'] ?: '-'; ?><br>
-                            <small><?php echo $member['position']; ?></small>
-                        </td>
-                        <td data-label="Details">
-                            <?php if ($member['role'] === 'doctor'): ?>
-                                <small>
-                                    <i class="fas fa-stethoscope"></i> <?php echo $member['specialization']; ?><br>
-                                    <i class="fas fa-dollar-sign"></i> $<?php echo number_format($member['consultationFee'], 2); ?><br>
-                                    <i class="fas fa-graduation-cap"></i> <?php echo $member['yearsOfExperience']; ?> years
-                                </small>
-                            <?php elseif ($member['role'] === 'nurse'): ?>
-                                <small>
-                                    <i class="fas fa-heartbeat"></i> <?php echo $member['nursingSpecialty']; ?><br>
-                                    <i class="fas fa-certificate"></i> <?php echo $member['certification']; ?>
-                                </small>
-                            <?php else: ?>
-                                <small>
-                                    <i class="fas fa-id-badge"></i> License: <?php echo $member['licenseNumber'] ?: 'N/A'; ?>
-                                </small>
-                            <?php endif; ?>
-                        </td>
-                        <td data-label="Status">
-                            <?php if ($member['role'] === 'doctor'): ?>
-                                <span class="status-badge <?php echo $member['isAvailable'] ? 'status-active' : 'status-cancelled'; ?>">
-                                    <?php echo $member['isAvailable'] ? 'Available' : 'Unavailable'; ?>
-                                </span>
-                            <?php else: ?>
-                                <span class="status-badge status-active">Active</span>
-                            <?php endif; ?>
-                        </td>
-                        <td data-label="Actions">
-                            <div class="action-buttons">
-                                <button class="btn btn-primary btn-sm" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($member)); ?>)">
+    <?php foreach ($roleOrder as $role): ?>
+        <?php if (!empty($staffByRole[$role])): ?>
+            <div class="admin-role-section">
+                <div class="admin-role-header">
+                    <h2>
+                        <span class="admin-role-icon role-<?php echo $role; ?>">
+                            <i class="fas <?php echo $roleIcons[$role]; ?>"></i>
+                        </span>
+                        <?php echo ucfirst($role); ?>s
+                        <span class="admin-count-badge"><?php echo count($staffByRole[$role]); ?></span>
+                    </h2>
+                </div>
+                <div class="admin-staff-grid">
+                    <?php foreach ($staffByRole[$role] as $member): ?>
+                        <div class="admin-staff-card">
+                            <div class="admin-staff-card-header">
+                                <div class="admin-staff-avatar">
+                                    <i class="fas fa-user-circle"></i>
+                                </div>
+                                <div class="admin-staff-info">
+                                    <h3><?php echo htmlspecialchars($member['firstName'] . ' ' . $member['lastName']); ?></h3>
+                                    <span class="admin-staff-role admin-role-<?php echo $member['role']; ?>">
+                                        <?php echo ucfirst($member['role']); ?>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="admin-staff-card-body">
+                                <div class="admin-info-row">
+                                    <i class="fas fa-envelope"></i>
+                                    <span><?php echo htmlspecialchars($member['email']); ?></span>
+                                </div>
+                                <div class="admin-info-row">
+                                    <i class="fas fa-phone"></i>
+                                    <span><?php echo htmlspecialchars($member['phoneNumber'] ?: 'N/A'); ?></span>
+                                </div>
+                                <div class="admin-info-row">
+                                    <i class="fas fa-building"></i>
+                                    <span><?php echo htmlspecialchars($member['department'] ?: 'N/A'); ?></span>
+                                </div>
+                                <div class="admin-info-row">
+                                    <i class="fas fa-dollar-sign"></i>
+                                    <span><strong>$<?php echo number_format($member['salary'], 2); ?></strong> / month</span>
+                                </div>
+                                <?php if ($member['role'] == 'doctor' && $member['specialization']): ?>
+                                    <div class="admin-info-row">
+                                        <i class="fas fa-stethoscope"></i>
+                                        <span><?php echo htmlspecialchars($member['specialization']); ?></span>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="admin-staff-card-footer">
+                                <button type="button" class="admin-btn admin-btn-primary admin-btn-sm" onclick='openEditStaffModal(<?php echo json_encode($member); ?>)'>
                                     <i class="fas fa-edit"></i> Edit
                                 </button>
-                                <a href="?delete=<?php echo $member['staffId']; ?>" class="btn btn-danger btn-sm" onclick="return confirm('Delete this staff member permanently?')">
+                                <a href="?delete=<?php echo $member['staffId']; ?>" class="admin-btn admin-btn-danger admin-btn-sm" onclick="return confirm('Are you sure you want to delete this staff member?\nThis action cannot be undone.')">
                                     <i class="fas fa-trash"></i> Delete
                                 </a>
                             </div>
-                        </td>
-                    </tr>
+                        </div>
                     <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
+                </div>
+            </div>
+        <?php endif; ?>
+    <?php endforeach; ?>
 </div>
 
 <!-- Edit Staff Modal -->
-<div id="editModal" class="modal">
-    <div class="modal-content modal-large">
-        <div class="modal-header">
-            <h3>Edit Staff Member</h3>
-            <span class="close" onclick="closeModal('editModal')">&times;</span>
+<div id="editStaffModal" class="admin-modal">
+    <div class="admin-modal-content admin-modal-large">
+        <div class="admin-modal-header">
+            <h3><i class="fas fa-user-edit"></i> Edit Staff Member</h3>
+            <span class="admin-modal-close" onclick="closeEditModal()">&times;</span>
         </div>
-        <form method="POST" action="" id="edit-form">
-            <div class="modal-body">
+        <form method="POST" action="update-staff.php" id="edit-staff-form">
+            <div class="admin-modal-body">
                 <input type="hidden" name="staff_id" id="edit_staff_id">
                 <input type="hidden" name="user_id" id="edit_user_id">
                 <input type="hidden" name="staff_role" id="edit_staff_role">
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="edit_first_name">First Name *</label>
-                        <input type="text" id="edit_first_name" name="first_name" required>
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>First Name <span class="required">*</span></label>
+                        <input type="text" id="edit_first_name" name="first_name" class="admin-form-control" required>
                     </div>
-                    <div class="form-group">
-                        <label for="edit_last_name">Last Name *</label>
-                        <input type="text" id="edit_last_name" name="last_name" required>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="edit_email">Email *</label>
-                        <input type="email" id="edit_email" name="email" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit_phone_number">Phone Number</label>
-                        <input type="tel" id="edit_phone_number" name="phone_number">
+                    <div class="admin-form-group">
+                        <label>Last Name <span class="required">*</span></label>
+                        <input type="text" id="edit_last_name" name="last_name" class="admin-form-control" required>
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="edit_license_number">License/Certificate Number</label>
-                        <input type="text" id="edit_license_number" name="license_number">
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Email <span class="required">*</span></label>
+                        <input type="email" id="edit_email" name="email" class="admin-form-control" required>
                     </div>
-                    <div class="form-group">
-                        <label for="edit_department">Department</label>
-                        <input type="text" id="edit_department" name="department">
+                    <div class="admin-form-group">
+                        <label>Phone Number</label>
+                        <input type="tel" id="edit_phone_number" name="phone_number" class="admin-form-control">
                     </div>
                 </div>
                 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="edit_position">Position Title</label>
-                        <input type="text" id="edit_position" name="position">
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>License Number</label>
+                        <input type="text" id="edit_license_number" name="license_number" class="admin-form-control">
+                    </div>
+                    <div class="admin-form-group">
+                        <label>Department</label>
+                        <input type="text" id="edit_department" name="department" class="admin-form-control">
+                    </div>
+                </div>
+                
+                <div class="admin-form-row">
+                    <div class="admin-form-group">
+                        <label>Position</label>
+                        <input type="text" id="edit_position" name="position" class="admin-form-control">
+                    </div>
+                    <div class="admin-form-group">
+                        <label>Salary ($)</label>
+                        <input type="number" id="edit_salary" name="salary" class="admin-form-control" step="0.01" min="0">
                     </div>
                 </div>
                 
                 <!-- Doctor Edit Fields -->
-                <div id="edit-doctor-fields" class="edit-role-fields" style="display: none;">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="edit_specialization">Specialization</label>
-                            <input type="text" id="edit_specialization" name="specialization">
+                <div id="edit-doctor-fields" style="display: none;">
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Specialization</label>
+                            <input type="text" id="edit_specialization" name="specialization" class="admin-form-control">
                         </div>
-                        <div class="form-group">
-                            <label for="edit_consultation_fee">Consultation Fee ($)</label>
-                            <input type="number" id="edit_consultation_fee" name="consultation_fee" step="10">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="edit_years_of_experience">Years of Experience</label>
-                            <input type="number" id="edit_years_of_experience" name="years_of_experience">
-                        </div>
-                        <div class="form-group">
-                            <label for="edit_education">Education & Qualifications</label>
-                            <input type="text" id="edit_education" name="education">
+                        <div class="admin-form-group">
+                            <label>Consultation Fee ($)</label>
+                            <input type="number" id="edit_consultation_fee" name="consultation_fee" class="admin-form-control" step="10">
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="edit_biography">Biography</label>
-                        <textarea id="edit_biography" name="biography" rows="3"></textarea>
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Years of Experience</label>
+                            <input type="number" id="edit_years_of_experience" name="years_of_experience" class="admin-form-control">
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Education</label>
+                            <input type="text" id="edit_education" name="education" class="admin-form-control">
+                        </div>
                     </div>
-                    <div class="form-group">
+                    <div class="admin-form-group">
+                        <label>Biography</label>
+                        <textarea id="edit_biography" name="biography" rows="3" class="admin-form-control"></textarea>
+                    </div>
+                    <div class="admin-form-group">
                         <label>
-                            <input type="checkbox" id="edit_is_available" name="is_available" value="1">
+                            <input type="checkbox" id="edit_is_available" name="is_available" value="1"> 
                             Available for appointments
                         </label>
                     </div>
                 </div>
                 
                 <!-- Nurse Edit Fields -->
-                <div id="edit-nurse-fields" class="edit-role-fields" style="display: none;">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="edit_nursing_specialty">Nursing Specialty</label>
-                            <input type="text" id="edit_nursing_specialty" name="nursing_specialty">
+                <div id="edit-nurse-fields" style="display: none;">
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Nursing Specialty</label>
+                            <input type="text" id="edit_nursing_specialty" name="nursing_specialty" class="admin-form-control">
                         </div>
-                        <div class="form-group">
-                            <label for="edit_certification">Certification</label>
-                            <input type="text" id="edit_certification" name="certification">
+                        <div class="admin-form-group">
+                            <label>Certification</label>
+                            <input type="text" id="edit_certification" name="certification" class="admin-form-control">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Accountant Edit Fields -->
+                <div id="edit-accountant-fields" style="display: none;">
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Qualification</label>
+                            <input type="text" id="edit_qualification" name="qualification" class="admin-form-control">
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Certification</label>
+                            <input type="text" id="edit_accountant_certification" name="accountant_certification" class="admin-form-control">
+                        </div>
+                    </div>
+                    <div class="admin-form-row">
+                        <div class="admin-form-group">
+                            <label>Specialization</label>
+                            <input type="text" id="edit_accountant_specialization" name="accountant_specialization" class="admin-form-control">
+                        </div>
+                        <div class="admin-form-group">
+                            <label>Years of Experience</label>
+                            <input type="number" id="edit_accountant_experience" name="accountant_experience" class="admin-form-control">
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="submit" name="update_staff" class="btn btn-primary">Update Staff</button>
-                <button type="button" class="btn" onclick="closeModal('editModal')">Cancel</button>
+            <div class="admin-modal-footer">
+                <button type="submit" class="admin-btn admin-btn-primary">
+                    <i class="fas fa-save"></i> Update Staff
+                </button>
+                <button type="button" class="admin-btn admin-btn-outline" onclick="closeEditModal()">Cancel</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-function toggleRoleFields() {
-    const role = document.getElementById('staff_role').value;
+document.addEventListener('DOMContentLoaded', function() {
+    toggleRoleForm();
+});
+
+function toggleRoleForm() {
+    const role = document.getElementById('staff_role')?.value || '';
     
-    document.getElementById('doctor-fields').style.display = 'none';
-    document.getElementById('nurse-fields').style.display = 'none';
-    document.getElementById('staff-fields').style.display = 'none';
+    const staffFields = document.getElementById('staff-fields');
+    const doctorFields = document.getElementById('doctor-fields');
+    const nurseFields = document.getElementById('nurse-fields');
+    const adminFields = document.getElementById('admin-fields');
+    const accountantFields = document.getElementById('accountant-fields');
+    
+    if (doctorFields) doctorFields.style.display = 'none';
+    if (nurseFields) nurseFields.style.display = 'none';
+    if (adminFields) adminFields.style.display = 'none';
+    if (accountantFields) accountantFields.style.display = 'none';
     
     if (role === 'doctor') {
-        document.getElementById('doctor-fields').style.display = 'block';
-        document.getElementById('position').value = 'Doctor';
+        if (doctorFields) doctorFields.style.display = 'block';
     } else if (role === 'nurse') {
-        document.getElementById('nurse-fields').style.display = 'block';
-        document.getElementById('position').value = 'Nurse';
-    } else if (role === 'staff') {
-        document.getElementById('staff-fields').style.display = 'block';
-        document.getElementById('position').value = '';
+        if (nurseFields) nurseFields.style.display = 'block';
+    } else if (role === 'admin') {
+        if (adminFields) adminFields.style.display = 'block';
+    } else if (role === 'accountant') {
+        if (accountantFields) accountantFields.style.display = 'block';
+    }
+    
+    const positionField = document.getElementById('position');
+    if (positionField) {
+        if (role === 'doctor') positionField.value = 'Doctor';
+        else if (role === 'nurse') positionField.value = 'Nurse';
+        else if (role === 'admin') positionField.value = 'Administrator';
+        else if (role === 'accountant') positionField.value = 'Accountant';
+        else if (role === 'staff') positionField.value = '';
     }
 }
 
-function openEditModal(staff) {
+function openEditStaffModal(staff) {
     document.getElementById('edit_staff_id').value = staff.staffId;
     document.getElementById('edit_user_id').value = staff.userId;
     document.getElementById('edit_staff_role').value = staff.role;
-    document.getElementById('edit_first_name').value = staff.firstName;
-    document.getElementById('edit_last_name').value = staff.lastName;
-    document.getElementById('edit_email').value = staff.email;
+    document.getElementById('edit_first_name').value = staff.firstName || '';
+    document.getElementById('edit_last_name').value = staff.lastName || '';
+    document.getElementById('edit_email').value = staff.email || '';
     document.getElementById('edit_phone_number').value = staff.phoneNumber || '';
     document.getElementById('edit_license_number').value = staff.licenseNumber || '';
     document.getElementById('edit_department').value = staff.department || '';
     document.getElementById('edit_position').value = staff.position || '';
+    document.getElementById('edit_salary').value = staff.salary || '2500.00';
     
-    document.getElementById('edit-doctor-fields').style.display = 'none';
-    document.getElementById('edit-nurse-fields').style.display = 'none';
+    const doctorFields = document.getElementById('edit-doctor-fields');
+    const nurseFields = document.getElementById('edit-nurse-fields');
+    const accountantFields = document.getElementById('edit-accountant-fields');
+    
+    if (doctorFields) doctorFields.style.display = 'none';
+    if (nurseFields) nurseFields.style.display = 'none';
+    if (accountantFields) accountantFields.style.display = 'none';
     
     if (staff.role === 'doctor') {
-        document.getElementById('edit-doctor-fields').style.display = 'block';
+        if (doctorFields) doctorFields.style.display = 'block';
         document.getElementById('edit_specialization').value = staff.specialization || '';
         document.getElementById('edit_consultation_fee').value = staff.consultationFee || '';
         document.getElementById('edit_years_of_experience').value = staff.yearsOfExperience || '';
@@ -542,29 +564,51 @@ function openEditModal(staff) {
         document.getElementById('edit_biography').value = staff.biography || '';
         document.getElementById('edit_is_available').checked = staff.isAvailable == 1;
     } else if (staff.role === 'nurse') {
-        document.getElementById('edit-nurse-fields').style.display = 'block';
+        if (nurseFields) nurseFields.style.display = 'block';
         document.getElementById('edit_nursing_specialty').value = staff.nursingSpecialty || '';
         document.getElementById('edit_certification').value = staff.certification || '';
+    } else if (staff.role === 'accountant') {
+        if (accountantFields) accountantFields.style.display = 'block';
+        document.getElementById('edit_qualification').value = staff.qualification || '';
+        document.getElementById('edit_accountant_certification').value = staff.accountant_cert || '';
+        document.getElementById('edit_accountant_specialization').value = staff.accountant_specialization || 'General Accounting';
+        document.getElementById('edit_accountant_experience').value = staff.accountant_experience || 0;
     }
     
-    openModal('editModal');
+    openModal('editStaffModal');
 }
 
-document.getElementById('staff-form')?.addEventListener('submit', function(e) {
-    const password = document.getElementById('password').value;
-    const confirm = document.getElementById('confirm_password').value;
+function openModal(modalId) {
+    document.getElementById(modalId).style.display = 'flex';
+}
+
+function closeEditModal() {
+    document.getElementById('editStaffModal').style.display = 'none';
+}
+
+window.onclick = function(event) {
+    if (event.target.classList.contains('admin-modal')) {
+        event.target.style.display = 'none';
+    }
+}
+
+document.getElementById('create-staff-form')?.addEventListener('submit', function(e) {
+    const password = document.querySelector('[name="password"]').value;
+    const confirm = document.querySelector('[name="confirm_password"]').value;
     
     if (password !== confirm) {
         e.preventDefault();
-        alert('Passwords do not match');
-    } else if (password.length < 8) {
-        e.preventDefault();
-        alert('Password must be at least 8 characters long');
+        alert('Passwords do not match!');
+        return false;
     }
-});
-
-document.addEventListener('DOMContentLoaded', function() {
-    toggleRoleFields();
+    
+    if (password.length < 8) {
+        e.preventDefault();
+        alert('Password must be at least 8 characters long!');
+        return false;
+    }
+    
+    return true;
 });
 </script>
 

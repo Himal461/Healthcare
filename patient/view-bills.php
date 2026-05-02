@@ -4,329 +4,347 @@ require_once '../includes/auth.php';
 checkRole('patient');
 
 $pageTitle = "My Bills - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="../css/patient.css">';
 include '../includes/header.php';
 
 $userId = $_SESSION['user_id'];
 
-// Get patient ID
 $stmt = $pdo->prepare("SELECT patientId FROM patients WHERE userId = ?");
 $stmt->execute([$userId]);
 $patient = $stmt->fetch();
-
-if (!$patient) {
-    $_SESSION['error'] = "Patient profile not found.";
-    header("Location: dashboard.php");
-    exit();
+if (!$patient) { 
+    $_SESSION['error'] = "Profile not found."; 
+    header("Location: dashboard.php"); 
+    exit(); 
 }
-
 $patientId = $patient['patientId'];
 
-// Get all bills
 $stmt = $pdo->prepare("
-    SELECT b.*, 
-           CONCAT(u.firstName, ' ', u.lastName) as doctorName,
-           mr.diagnosis
-    FROM bills b
-    LEFT JOIN medical_records mr ON b.recordId = mr.recordId
+    SELECT b.*, CONCAT(u.firstName, ' ', u.lastName) as doctorName, mr.diagnosis
+    FROM bills b 
+    LEFT JOIN medical_records mr ON b.recordId = mr.recordId 
     LEFT JOIN doctors d ON mr.doctorId = d.doctorId
-    LEFT JOIN staff s ON d.staffId = s.staffId
-    LEFT JOIN users u ON s.userId = u.userId
-    WHERE b.patientId = ?
+    LEFT JOIN staff s ON d.staffId = s.staffId 
+    LEFT JOIN users u ON s.userId = u.userId 
+    WHERE b.patientId = ? 
     ORDER BY b.generatedAt DESC
 ");
 $stmt->execute([$patientId]);
 $bills = $stmt->fetchAll();
 
 $unpaidTotal = 0;
-foreach ($bills as $bill) {
-    if ($bill['status'] == 'unpaid') {
-        $unpaidTotal += $bill['totalAmount'];
-    }
+$paidTotal = 0;
+foreach ($bills as $b) {
+    if ($b['status'] == 'unpaid') $unpaidTotal += $b['totalAmount'];
+    if ($b['status'] == 'paid') $paidTotal += $b['totalAmount'];
 }
 ?>
 
-<div class="dashboard">
-    <div class="dashboard-header">
-        <div>
-            <h1>My Bills</h1>
+<div class="patient-container">
+    <div class="patient-page-header">
+        <div class="header-title">
+            <h1><i class="fas fa-file-invoice-dollar"></i> My Bills</h1>
             <p>View and manage your billing history</p>
         </div>
-        <div class="summary-cards">
-            <div class="summary-card">
-                <span class="summary-label">Total Outstanding</span>
-                <span class="summary-value">$<?php echo number_format($unpaidTotal, 2); ?></span>
-            </div>
-            <div class="summary-card">
-                <span class="summary-label">Total Bills</span>
-                <span class="summary-value"><?php echo count($bills); ?></span>
-            </div>
+        <div class="header-actions">
+            <a href="dashboard.php" class="patient-btn patient-btn-outline">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-header">
-            <h3><i class="fas fa-receipt"></i> All Bills</h3>
+    <!-- Payment Notice Banner for Unpaid Bills -->
+    <?php if ($unpaidTotal > 0): ?>
+        <div class="patient-payment-banner">
+            <div class="patient-payment-banner-icon">
+                <i class="fas fa-info-circle"></i>
+            </div>
+            <div class="patient-payment-banner-content">
+                <h3>Payment Information</h3>
+                <p>You have <strong>$<?php echo number_format($unpaidTotal, 2); ?></strong> in outstanding bills. Please visit our reception desk to complete your payment.</p>
+                <div class="patient-payment-banner-contact">
+                    <span><i class="fas fa-map-marker-alt"></i> Fussel Lane, Gungahlin, ACT 2912</span>
+                    <span><i class="fas fa-clock"></i> Mon-Fri: 9AM-5PM | Sat: 9AM-1PM</span>
+                    <span><i class="fas fa-phone"></i> +61 438 347 3483</span>
+                </div>
+            </div>
         </div>
-        <div class="card-body">
+    <?php endif; ?>
+
+    <div class="patient-summary-cards">
+        <div class="patient-summary-card">
+            <span>Outstanding Balance</span>
+            <span>$<?php echo number_format($unpaidTotal, 2); ?></span>
+        </div>
+        <div class="patient-summary-card">
+            <span>Total Paid</span>
+            <span>$<?php echo number_format($paidTotal, 2); ?></span>
+        </div>
+        <div class="patient-summary-card">
+            <span>Total Bills</span>
+            <span><?php echo count($bills); ?></span>
+        </div>
+    </div>
+
+    <div class="patient-card">
+        <div class="patient-table-responsive">
             <?php if (empty($bills)): ?>
-                <div class="empty-state">
-                    <i class="fas fa-folder-open"></i>
+                <div class="patient-empty-state">
+                    <i class="fas fa-receipt"></i>
                     <h3>No Bills Found</h3>
-                    <p>Your bills will appear here after your consultations.</p>
-                    <a href="book-appointment.php" class="btn btn-primary">Book Appointment</a>
+                    <p>You don't have any bills yet.</p>
                 </div>
             <?php else: ?>
-                <div class="table-responsive">
-                    <table class="data-table">
-                        <thead>
-                            32
-                                <th>Bill #</th>
-                                <th>Date</th>
-                                <th>Doctor</th>
-                                <th>Description</th>
-                                <th>Amount</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </thead>
-                        <tbody>
-                            <?php foreach ($bills as $bill): ?>
+                <table class="patient-data-table">
+                    <thead>
+                        <tr>
+                            <th>Bill #</th>
+                            <th>Date</th>
+                            <th>Doctor</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($bills as $b): ?>
                             <tr>
-                                <td>#<?php echo str_pad($bill['billId'], 6, '0', STR_PAD_LEFT); ?></td>
-                                <td><?php echo date('M j, Y', strtotime($bill['generatedAt'])); ?></td>
-                                <td>Dr. <?php echo htmlspecialchars($bill['doctorName']); ?></td>
-                                <td>
-                                    <?php if ($bill['diagnosis']): ?>
-                                        <?php echo substr(htmlspecialchars($bill['diagnosis']), 0, 50); ?>...
-                                    <?php else: ?>
-                                        Consultation Fee
-                                    <?php endif; ?>
-                                </td>
-                                <td><strong>$<?php echo number_format($bill['totalAmount'], 2); ?></strong></td>
-                                <td>
-                                    <span class="status-badge status-<?php echo $bill['status']; ?>">
-                                        <?php echo ucfirst($bill['status']); ?>
+                                <td data-label="Bill #">#<?php echo str_pad($b['billId'], 6, '0', STR_PAD_LEFT); ?></td>
+                                <td data-label="Date"><?php echo date('M j, Y', strtotime($b['generatedAt'])); ?></td>
+                                <td data-label="Doctor">Dr. <?php echo htmlspecialchars($b['doctorName']); ?></td>
+                                <td data-label="Amount">$<?php echo number_format($b['totalAmount'], 2); ?></td>
+                                <td data-label="Status">
+                                    <span class="patient-status-badge patient-status-<?php echo $b['status']; ?>">
+                                        <?php echo ucfirst($b['status']); ?>
                                     </span>
                                 </td>
-                                <td>
-                                    <a href="view-bill.php?bill_id=<?php echo $bill['billId']; ?>" class="btn btn-info btn-sm">
+                                <td data-label="Actions">
+                                    <a href="view-bill.php?bill_id=<?php echo $b['billId']; ?>" class="patient-btn patient-btn-info patient-btn-sm">
                                         <i class="fas fa-eye"></i> View
                                     </a>
-                                    <?php if ($bill['status'] == 'unpaid'): ?>
-                                        <a href="view-bill.php?bill_id=<?php echo $bill['billId']; ?>" class="btn btn-primary btn-sm">
-                                            <i class="fas fa-credit-card"></i> Pay Now
-                                        </a>
-                                    <?php endif; ?>
                                 </td>
                             </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
             <?php endif; ?>
         </div>
     </div>
 </div>
 
 <style>
-.dashboard {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
+    /* Payment Notice Banner */
+.patient-payment-banner {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 2px solid #3b82f6;
+    border-radius: 16px;
+    padding: 25px 30px;
+    margin-bottom: 25px;
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
 }
 
-.dashboard-header {
+.patient-payment-banner-icon {
+    width: 50px;
+    height: 50px;
+    background: #3b82f6;
+    border-radius: 50%;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-    gap: 15px;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
-.dashboard-header h1 {
-    margin: 0;
-    color: #333;
-}
-
-.dashboard-header p {
-    margin: 5px 0 0;
-    color: #666;
-}
-
-.summary-cards {
-    display: flex;
-    gap: 15px;
-}
-
-.summary-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    padding: 15px 25px;
-    border-radius: 8px;
-    text-align: center;
-    color: white;
-}
-
-.summary-label {
-    display: block;
-    font-size: 12px;
-    opacity: 0.9;
-    margin-bottom: 5px;
-}
-
-.summary-value {
-    display: block;
+.patient-payment-banner-icon i {
     font-size: 24px;
-    font-weight: bold;
+    color: white;
 }
 
-.card {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
-    overflow: hidden;
-}
-
-.card-header {
-    background: #f8f9fa;
-    padding: 15px 20px;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.card-header h3 {
-    margin: 0;
-    color: #495057;
+.patient-payment-banner-content h3 {
+    color: #1e40af;
+    margin: 0 0 10px 0;
     font-size: 18px;
+    font-weight: 700;
 }
 
-.card-header i {
-    margin-right: 8px;
-    color: #1a75bc;
+.patient-payment-banner-content p {
+    color: #1e3a5f;
+    margin: 0 0 15px 0;
+    font-size: 15px;
+    line-height: 1.5;
 }
 
-.card-body {
-    padding: 20px;
+.patient-payment-banner-contact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
 }
 
-.table-responsive {
-    overflow-x: auto;
-}
-
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.data-table th,
-.data-table td {
-    padding: 12px;
-    text-align: left;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.data-table th {
-    background: #f8f9fa;
-    font-weight: 600;
-    color: #495057;
-}
-
-.data-table tr:hover {
-    background: #f8f9fa;
-}
-
-.btn-sm {
-    padding: 5px 10px;
-    font-size: 12px;
-    border-radius: 4px;
-    text-decoration: none;
-    display: inline-flex;
+.patient-payment-banner-contact span {
+    display: flex;
     align-items: center;
-    gap: 5px;
-    cursor: pointer;
-}
-
-.btn-primary {
-    background: #1a75bc;
-    color: white;
-    border: none;
-    transition: all 0.3s ease;
-}
-
-.btn-primary:hover {
-    background: #0e5a92;
-}
-
-.btn-info {
-    background: #17a2b8;
-    color: white;
-    border: none;
-    transition: all 0.3s ease;
-}
-
-.btn-info:hover {
-    background: #138496;
-}
-
-.status-badge {
-    display: inline-block;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
+    gap: 8px;
+    color: #475569;
+    font-size: 14px;
     font-weight: 500;
 }
 
-.status-paid {
-    background: #d4edda;
-    color: #155724;
+.patient-payment-banner-contact span i {
+    color: #3b82f6;
+    width: 18px;
 }
 
-.status-unpaid {
-    background: #fff3cd;
-    color: #856404;
+/* Payment Notice Section (on bill detail page) */
+.patient-payment-notice-section {
+    background: #f8fafc;
+    border: 2px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 25px 30px;
+    margin-top: 25px;
 }
 
-.empty-state {
+.patient-payment-notice-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.patient-payment-notice-header i {
+    font-size: 24px;
+    color: #3b82f6;
+}
+
+.patient-payment-notice-header span {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.patient-payment-notice-section > p {
+    color: #475569;
+    font-size: 15px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.patient-payment-notice-details {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #e2e8f0;
+}
+
+.patient-notice-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.patient-notice-item:last-child {
+    border-bottom: none;
+}
+
+.patient-notice-item i {
+    width: 20px;
+    color: #3b82f6;
+    font-size: 16px;
     text-align: center;
-    padding: 40px;
-    color: #6c757d;
 }
 
-.empty-state i {
-    font-size: 48px;
+.patient-notice-item span {
+    color: #334155;
+    font-size: 14px;
+}
+
+/* Paid Section */
+.patient-payment-paid-section {
+    background: #f0fdf4;
+    border: 2px solid #22c55e;
+    border-radius: 16px;
+    padding: 25px 30px;
+    margin-top: 25px;
+}
+
+.patient-payment-paid-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     margin-bottom: 10px;
-    color: #dee2e6;
 }
 
-.empty-state h3 {
-    margin: 10px 0;
-    color: #495057;
+.patient-payment-paid-header i {
+    font-size: 28px;
+    color: #16a34a;
 }
 
-.empty-state p {
-    margin: 0;
+.patient-payment-paid-header span {
+    font-size: 18px;
+    font-weight: 700;
+    color: #166534;
 }
 
+.patient-payment-paid-section p {
+    color: #166534;
+    font-size: 15px;
+    margin: 5px 0 0 40px;
+}
+
+/* Cancelled Section */
+.patient-payment-cancelled-section {
+    background: #fef2f2;
+    border: 2px solid #ef4444;
+    border-radius: 16px;
+    padding: 25px 30px;
+    margin-top: 25px;
+}
+
+.patient-payment-cancelled-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.patient-payment-cancelled-header i {
+    font-size: 28px;
+    color: #dc2626;
+}
+
+.patient-payment-cancelled-header span {
+    font-size: 18px;
+    font-weight: 700;
+    color: #991b1b;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-    .dashboard-header {
+    .patient-payment-banner {
         flex-direction: column;
-        align-items: flex-start;
+        text-align: center;
+        padding: 20px;
     }
     
-    .summary-cards {
-        width: 100%;
+    .patient-payment-banner-icon {
+        margin: 0 auto;
     }
     
-    .summary-card {
-        flex: 1;
+    .patient-payment-banner-contact {
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
     }
     
-    .data-table {
-        font-size: 12px;
+    .patient-payment-notice-section {
+        padding: 20px;
     }
     
-    .data-table th,
-    .data-table td {
-        padding: 8px;
+    .patient-payment-notice-details {
+        padding: 15px;
     }
 }
 </style>

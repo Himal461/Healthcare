@@ -4,6 +4,8 @@ require_once '../includes/auth.php';
 checkRole('doctor');
 
 $pageTitle = "Doctor Dashboard - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="../css/doctor.css">';
+$extraJS = '<script src="../js/doctor.js"></script>';
 include '../includes/header.php';
 
 $userId = $_SESSION['user_id'];
@@ -27,175 +29,363 @@ if (!$doctor) {
 }
 
 $doctorId = $doctor['doctorId'];
-
-// Get today's date
 $today = date('Y-m-d');
 
-// Get statistics
 // Today's appointments count
 $stmt = $pdo->prepare("
-    SELECT COUNT(*) as count FROM appointments 
-    WHERE doctorId = ? AND DATE(dateTime) = ?
+    SELECT COUNT(*) FROM appointments 
+    WHERE doctorId = ? AND DATE(dateTime) = CURDATE()
+    AND status NOT IN ('cancelled', 'no-show')
 ");
-$stmt->execute([$doctorId, $today]);
-$todayCount = $stmt->fetch()['count'];
+$stmt->execute([$doctorId]);
+$todayCount = $stmt->fetchColumn();
 
 // Upcoming appointments count
 $stmt = $pdo->prepare("
-    SELECT COUNT(*) as count FROM appointments 
-    WHERE doctorId = ? AND DATE(dateTime) > ? AND status NOT IN ('cancelled', 'completed')
+    SELECT COUNT(*) FROM appointments 
+    WHERE doctorId = ? 
+    AND DATE(dateTime) > CURDATE() 
+    AND status IN ('scheduled', 'confirmed')
 ");
-$stmt->execute([$doctorId, $today]);
-$upcomingCount = $stmt->fetch()['count'];
+$stmt->execute([$doctorId]);
+$upcomingCount = $stmt->fetchColumn();
 
 // Total patients
 $stmt = $pdo->prepare("
-    SELECT COUNT(DISTINCT patientId) as count FROM appointments 
-    WHERE doctorId = ?
+    SELECT COUNT(DISTINCT patientId) FROM (
+        SELECT patientId FROM appointments WHERE doctorId = ?
+        UNION
+        SELECT patientId FROM medical_records WHERE doctorId = ?
+        UNION
+        SELECT patientId FROM lab_tests WHERE orderedBy = ?
+    ) AS all_patients
 ");
-$stmt->execute([$doctorId]);
-$totalPatients = $stmt->fetch()['count'];
+$stmt->execute([$doctorId, $doctorId, $doctorId]);
+$totalPatients = $stmt->fetchColumn();
 
 // Total appointments
-$stmt = $pdo->prepare("
-    SELECT COUNT(*) as count FROM appointments WHERE doctorId = ?
-");
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE doctorId = ?");
 $stmt->execute([$doctorId]);
-$totalAppointments = $stmt->fetch()['count'];
+$totalAppointments = $stmt->fetchColumn();
 
-// Get today's appointments
+// Lab tests statistics
+$stmt = $pdo->prepare("
+    SELECT COUNT(*) FROM lab_tests lt
+    WHERE lt.orderedBy = ? 
+    OR lt.patientId IN (SELECT DISTINCT patientId FROM appointments WHERE doctorId = ?)
+    OR lt.patientId IN (SELECT DISTINCT patientId FROM medical_records WHERE doctorId = ?)
+");
+$stmt->execute([$doctorId, $doctorId, $doctorId]);
+$totalLabTests = $stmt->fetchColumn();
+
+$stmt = $pdo->prepare("
+    SELECT COUNT(*) FROM lab_tests lt
+    WHERE (lt.orderedBy = ? 
+        OR lt.patientId IN (SELECT DISTINCT patientId FROM appointments WHERE doctorId = ?)
+        OR lt.patientId IN (SELECT DISTINCT patientId FROM medical_records WHERE doctorId = ?))
+    AND lt.status IN ('ordered', 'in-progress')
+");
+$stmt->execute([$doctorId, $doctorId, $doctorId]);
+$pendingLabTests = $stmt->fetchColumn();
+
+// Get pending medical certificates for this doctor
+$pendingCertificates = [];
+$certStmt = $pdo->prepare("
+    SELECT mc.*, 
+           CONCAT(u.firstName, ' ', u.lastName) as patient_name,
+           u.email as patient_email
+    FROM medical_certificates mc
+    JOIN patients p ON mc.patient_id = p.patientId
+    JOIN users u ON p.userId = u.userId
+    WHERE mc.doctor_id = ? 
+    AND (mc.approval_status = 'pending' OR mc.approval_status = 'pending_consultation' OR mc.approval_status IS NULL)
+    ORDER BY mc.created_at DESC
+    LIMIT 5
+");
+$certStmt->execute([$doctorId]);
+$pendingCertificates = $certStmt->fetchAll();
+$pendingCertificatesCount = count($pendingCertificates);
+
+// Today's appointments - FIXED: Added appointmentId for smart detection
 $stmt = $pdo->prepare("
     SELECT a.*, 
            CONCAT(u.firstName, ' ', u.lastName) as patientName,
            u.phoneNumber,
            p.dateOfBirth,
            p.bloodType,
-           TIMESTAMPDIFF(YEAR, p.dateOfBirth, CURDATE()) as age
+           TIMESTAMPDIFF(YEAR, p.dateOfBirth, CURDATE()) as age,
+           p.patientId,
+           a.appointmentId
     FROM appointments a
     JOIN patients p ON a.patientId = p.patientId
     JOIN users u ON p.userId = u.userId
-    WHERE a.doctorId = ? AND DATE(a.dateTime) = ?
+    WHERE a.doctorId = ? AND DATE(a.dateTime) = CURDATE()
+    AND a.status NOT IN ('cancelled', 'no-show')
+    AND u.role = 'patient'
     ORDER BY a.dateTime ASC
 ");
-$stmt->execute([$doctorId, $today]);
+$stmt->execute([$doctorId]);
 $todayAppointments = $stmt->fetchAll();
 
-// Get upcoming appointments (next 7 days excluding today)
+// Upcoming appointments (next 7 days) - FIXED: Added appointmentId for smart detection
 $stmt = $pdo->prepare("
     SELECT a.*, 
            CONCAT(u.firstName, ' ', u.lastName) as patientName,
            u.phoneNumber,
            p.dateOfBirth,
            p.bloodType,
-           TIMESTAMPDIFF(YEAR, p.dateOfBirth, CURDATE()) as age
+           TIMESTAMPDIFF(YEAR, p.dateOfBirth, CURDATE()) as age,
+           p.patientId,
+           a.appointmentId
     FROM appointments a
     JOIN patients p ON a.patientId = p.patientId
     JOIN users u ON p.userId = u.userId
-    WHERE a.doctorId = ? AND DATE(a.dateTime) > ? AND DATE(a.dateTime) <= DATE_ADD(?, INTERVAL 7 DAY)
-      AND a.status NOT IN ('cancelled', 'completed')
+    WHERE a.doctorId = ? 
+    AND DATE(a.dateTime) > CURDATE() 
+    AND DATE(a.dateTime) <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+    AND a.status IN ('scheduled', 'confirmed')
+    AND u.role = 'patient'
     ORDER BY a.dateTime ASC
     LIMIT 5
 ");
-$stmt->execute([$doctorId, $today, $today]);
+$stmt->execute([$doctorId]);
 $upcomingAppointments = $stmt->fetchAll();
+
+// Display messages
+$success = $_SESSION['success'] ?? null;
+$error = $_SESSION['error'] ?? null;
+unset($_SESSION['success'], $_SESSION['error']);
+
+/**
+ * Helper function to get appointment link based on type
+ */
+function getAppointmentLink($pdo, $appointmentId, $patientId) {
+    // Check if this appointment is for a medical certificate
+    $certCheck = $pdo->prepare("
+        SELECT certificate_id FROM medical_certificates 
+        WHERE appointment_id = ? 
+        AND (approval_status = 'pending_consultation' OR approval_status = 'pending' OR approval_status IS NULL)
+        LIMIT 1
+    ");
+    $certCheck->execute([$appointmentId]);
+    $certificate = $certCheck->fetch();
+    
+    if ($certificate) {
+        return [
+            'url' => 'certificate-consultation.php?certificate_id=' . $certificate['certificate_id'],
+            'label' => 'Cert Consultation',
+            'class' => 'doctor-btn doctor-btn-warning doctor-btn-sm',
+            'icon' => 'fa-file-medical',
+            'type' => 'certificate'
+        ];
+    }
+    
+    return [
+        'url' => 'consultation.php?appointment_id=' . $appointmentId . '&patient_id=' . $patientId,
+        'label' => 'Start',
+        'class' => 'doctor-btn doctor-btn-primary doctor-btn-sm',
+        'icon' => 'fa-stethoscope',
+        'type' => 'regular'
+    ];
+}
 ?>
 
-<div class="dashboard">
+<div class="doctor-container">
     <!-- Welcome Section -->
-    <div class="welcome-section">
-        <div class="welcome-text">
+    <div class="doctor-welcome-section">
+        <div class="doctor-welcome-text">
             <h1>Welcome back, Dr. <?php echo htmlspecialchars($doctor['doctorName']); ?></h1>
-            <p>Here's what's happening with your practice today.</p>
+            <p><?php echo htmlspecialchars($doctor['specialization']); ?> · Here's your practice overview</p>
         </div>
-        <div class="weather-widget">
-            <i class="fas fa-sun"></i>
-            <span class="temperature">27°C</span>
-            <span class="weather-text">Partly sunny</span>
+        <div class="doctor-welcome-stats">
+            <div class="doctor-welcome-stat-item">
+                <span class="stat-number"><?php echo $todayCount; ?></span>
+                <span class="stat-label">Today's Patients</span>
+            </div>
+            <div class="doctor-welcome-stat-item">
+                <span class="stat-number"><?php echo $upcomingCount; ?></span>
+                <span class="stat-label">Upcoming</span>
+            </div>
         </div>
     </div>
 
-    <!-- Stats Cards -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon">
-                <i class="fas fa-calendar-check"></i>
-            </div>
-            <div class="stat-info">
+    <?php if ($error): ?>
+        <div class="doctor-alert doctor-alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="doctor-alert doctor-alert-success">
+            <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+        </div>
+    <?php endif; ?>
+
+    <!-- Statistics Cards -->
+    <div class="doctor-stats-grid">
+        <div class="doctor-stat-card today">
+            <div class="doctor-stat-icon"><i class="fas fa-calendar-check"></i></div>
+            <div class="doctor-stat-content">
                 <h3><?php echo $todayCount; ?></h3>
                 <p>Today's Appointments</p>
+                <small><?php echo date('l, F j'); ?></small>
             </div>
         </div>
         
-        <div class="stat-card">
-            <div class="stat-icon">
-                <i class="fas fa-calendar-plus"></i>
-            </div>
-            <div class="stat-info">
+        <div class="doctor-stat-card upcoming">
+            <div class="doctor-stat-icon"><i class="fas fa-calendar-plus"></i></div>
+            <div class="doctor-stat-content">
                 <h3><?php echo $upcomingCount; ?></h3>
-                <p>Upcoming Appointments</p>
+                <p>Upcoming</p>
+                <small>Next 7 days</small>
             </div>
         </div>
         
-        <div class="stat-card">
-            <div class="stat-icon">
-                <i class="fas fa-users"></i>
-            </div>
-            <div class="stat-info">
+        <div class="doctor-stat-card patients">
+            <div class="doctor-stat-icon"><i class="fas fa-users"></i></div>
+            <div class="doctor-stat-content">
                 <h3><?php echo $totalPatients; ?></h3>
                 <p>Total Patients</p>
+                <small>Under your care</small>
             </div>
         </div>
         
-        <div class="stat-card">
-            <div class="stat-icon">
-                <i class="fas fa-chart-line"></i>
-            </div>
-            <div class="stat-info">
+        <div class="doctor-stat-card appointments">
+            <div class="doctor-stat-icon"><i class="fas fa-chart-line"></i></div>
+            <div class="doctor-stat-content">
                 <h3><?php echo $totalAppointments; ?></h3>
                 <p>Total Appointments</p>
+                <small>All time</small>
             </div>
         </div>
+        
+        <div class="doctor-stat-card labtests">
+            <div class="doctor-stat-icon"><i class="fas fa-flask"></i></div>
+            <div class="doctor-stat-content">
+                <h3><?php echo $totalLabTests; ?></h3>
+                <p>Lab Tests</p>
+                <small><?php echo $pendingLabTests; ?> pending</small>
+            </div>
+        </div>
+        
+        <?php if ($pendingCertificatesCount > 0): ?>
+        <div class="doctor-stat-card certificates">
+            <div class="doctor-stat-icon"><i class="fas fa-file-medical"></i></div>
+            <div class="doctor-stat-content">
+                <h3><?php echo $pendingCertificatesCount; ?></h3>
+                <p>Pending Certificates</p>
+                <small>Awaiting consultation</small>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
-    <!-- Quick Actions - Horizontal Layout -->
-    <div class="quick-actions">
-        <h3>Quick Actions</h3>
-        <div class="actions-grid-horizontal">
-            <a href="schedule.php" class="action-card">
+    <!-- Quick Actions -->
+    <div class="doctor-quick-actions">
+        <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+        <div class="doctor-actions-grid">
+            <a href="appointments.php" class="doctor-action-card">
                 <i class="fas fa-calendar-alt"></i>
                 <span>View Schedule</span>
             </a>
-            <a href="patients.php" class="action-card">
+            <a href="patients.php" class="doctor-action-card">
                 <i class="fas fa-user-injured"></i>
                 <span>My Patients</span>
             </a>
-            <a href="prescriptions.php" class="action-card">
+            <a href="prescriptions.php" class="doctor-action-card">
                 <i class="fas fa-prescription"></i>
                 <span>Prescriptions</span>
             </a>
-            <a href="availability.php" class="action-card">
+            <a href="lab-tests.php" class="doctor-action-card">
+                <i class="fas fa-flask"></i>
+                <span>Lab Tests</span>
+            </a>
+            <a href="availability.php" class="doctor-action-card">
                 <i class="fas fa-clock"></i>
                 <span>Set Availability</span>
             </a>
-            <a href="profile.php" class="action-card">
+            <a href="../profile.php" class="doctor-action-card">
                 <i class="fas fa-user-edit"></i>
                 <span>Update Profile</span>
             </a>
         </div>
     </div>
 
+    <!-- Pending Medical Certificates -->
+    <?php if (!empty($pendingCertificates)): ?>
+    <div class="doctor-card">
+        <div class="doctor-card-header">
+            <h3><i class="fas fa-file-medical" style="color: #f59e0b;"></i> Pending Medical Certificates (<?php echo count($pendingCertificates); ?>)</h3>
+            <span class="doctor-status-badge" style="background: #fef3c7; color: #92400e;">Awaiting Consultation</span>
+        </div>
+        <div class="doctor-table-responsive">
+            <table class="doctor-data-table">
+                <thead>
+                    <tr>
+                        <th>Certificate #</th>
+                        <th>Patient</th>
+                        <th>Type</th>
+                        <th>Period</th>
+                        <th>Requested</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($pendingCertificates as $cert): ?>
+                        <tr>
+                            <td data-label="Certificate #">
+                                <strong><?php echo htmlspecialchars($cert['certificate_number']); ?></strong>
+                            </td>
+                            <td data-label="Patient">
+                                <strong><?php echo htmlspecialchars($cert['patient_name']); ?></strong><br>
+                                <small><?php echo htmlspecialchars($cert['patient_email']); ?></small>
+                            </td>
+                            <td data-label="Type">
+                                <?php 
+                                $typeLabels = [
+                                    'work' => 'Work Leave',
+                                    'school' => 'School Leave',
+                                    'travel' => 'Travel',
+                                    'insurance' => 'Insurance',
+                                    'other' => 'Other'
+                                ];
+                                echo $typeLabels[$cert['certificate_type']] ?? ucfirst($cert['certificate_type']);
+                                ?>
+                            </td>
+                            <td data-label="Period">
+                                <?php echo date('M j', strtotime($cert['start_date'])) . ' - ' . date('M j, Y', strtotime($cert['end_date'])); ?>
+                            </td>
+                            <td data-label="Requested">
+                                <?php echo date('M j, g:i A', strtotime($cert['created_at'])); ?>
+                            </td>
+                            <td data-label="Actions">
+                                <a href="certificate-consultation.php?certificate_id=<?php echo $cert['certificate_id']; ?>" class="doctor-btn doctor-btn-primary doctor-btn-sm">
+                                    <i class="fas fa-stethoscope"></i> Start Consultation
+                                </a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Today's Appointments -->
-    <div class="appointments-section">
-        <h3>Today's Appointments (<?php echo date('F j, Y'); ?>)</h3>
+    <div class="doctor-card">
+        <div class="doctor-card-header">
+            <h3><i class="fas fa-calendar-day"></i> Today's Appointments</h3>
+            <a href="appointments.php" class="doctor-view-all">View All <i class="fas fa-arrow-right"></i></a>
+        </div>
         
         <?php if (empty($todayAppointments)): ?>
-            <div class="empty-state">
+            <div class="doctor-empty-state">
                 <i class="fas fa-calendar-day"></i>
                 <p>No appointments scheduled for today.</p>
             </div>
         <?php else: ?>
-            <div class="table-responsive">
-                <table class="data-table">
+            <div class="doctor-table-responsive">
+                <table class="doctor-data-table">
                     <thead>
                         <tr>
                             <th>Time</th>
@@ -207,60 +397,31 @@ $upcomingAppointments = $stmt->fetchAll();
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($todayAppointments as $appointment): ?>
+                        <?php foreach ($todayAppointments as $appointment): 
+                            $linkData = getAppointmentLink($pdo, $appointment['appointmentId'], $appointment['patientId']);
+                        ?>
                             <tr>
-                                <td><?php echo date('g:i A', strtotime($appointment['dateTime'])); ?></td>
-                                <td>
+                                <td data-label="Time"><strong><?php echo date('g:i A', strtotime($appointment['dateTime'])); ?></strong></td>
+                                <td data-label="Patient">
                                     <strong><?php echo htmlspecialchars($appointment['patientName']); ?></strong>
-                                    <br>
-                                    <small><?php echo htmlspecialchars($appointment['phoneNumber']); ?></small>
+                                    <br><small><?php echo htmlspecialchars($appointment['phoneNumber']); ?></small>
+                                    <?php if ($linkData['type'] === 'certificate'): ?>
+                                        <br><span class="doctor-cert-badge">Certificate</span>
+                                    <?php endif; ?>
                                 </td>
-                                <td><?php echo $appointment['age']; ?></td>
-                                <td><?php echo $appointment['bloodType'] ?: 'N/A'; ?></td>
-                                <td>
-                                    <?php
-                                    $statusClass = '';
-                                    $statusText = '';
-                                    switch($appointment['status']) {
-                                        case 'scheduled':
-                                            $statusClass = 'status-scheduled';
-                                            $statusText = 'Scheduled';
-                                            break;
-                                        case 'confirmed':
-                                            $statusClass = 'status-confirmed';
-                                            $statusText = 'Confirmed';
-                                            break;
-                                        case 'in-progress':
-                                            $statusClass = 'status-progress';
-                                            $statusText = 'In Progress';
-                                            break;
-                                        case 'completed':
-                                            $statusClass = 'status-completed';
-                                            $statusText = 'Completed';
-                                            break;
-                                        case 'cancelled':
-                                            $statusClass = 'status-cancelled';
-                                            $statusText = 'Cancelled';
-                                            break;
-                                        default:
-                                            $statusClass = 'status-scheduled';
-                                            $statusText = ucfirst($appointment['status']);
-                                    }
-                                    ?>
-                                    <span class="status-badge <?php echo $statusClass; ?>">
-                                        <?php echo $statusText; ?>
+                                <td data-label="Age"><?php echo $appointment['age']; ?></td>
+                                <td data-label="Blood Type"><?php echo $appointment['bloodType'] ?: 'N/A'; ?></td>
+                                <td data-label="Status">
+                                    <span class="doctor-status-badge doctor-status-<?php echo $appointment['status']; ?>">
+                                        <?php echo ucfirst($appointment['status']); ?>
                                     </span>
                                 </td>
-                                <td>
+                                <td data-label="Actions">
                                     <?php if ($appointment['status'] == 'completed'): ?>
-                                        <a href="view-consultation.php?appointment_id=<?php echo $appointment['appointmentId']; ?>" class="btn btn-sm btn-info">
-                                            <i class="fas fa-eye"></i> View
-                                        </a>
-                                    <?php elseif ($appointment['status'] == 'cancelled'): ?>
-                                        <span class="text-muted">Cancelled</span>
-                                    <?php else: ?>
-                                        <a href="consultation.php?appointment_id=<?php echo $appointment['appointmentId']; ?>&patient_id=<?php echo $appointment['patientId']; ?>" class="btn btn-sm btn-primary">
-                                            <i class="fas fa-play"></i> Start
+                                        <a href="view-consultation.php?appointment_id=<?php echo $appointment['appointmentId']; ?>" class="doctor-btn doctor-btn-info doctor-btn-sm">View</a>
+                                    <?php elseif ($appointment['status'] != 'cancelled'): ?>
+                                        <a href="<?php echo $linkData['url']; ?>" class="<?php echo $linkData['class']; ?>">
+                                            <i class="fas <?php echo $linkData['icon']; ?>"></i> <?php echo $linkData['label']; ?>
                                         </a>
                                     <?php endif; ?>
                                 </td>
@@ -273,46 +434,47 @@ $upcomingAppointments = $stmt->fetchAll();
     </div>
 
     <!-- Upcoming Appointments -->
-    <div class="appointments-section">
-        <h3>Upcoming Appointments</h3>
+    <div class="doctor-card">
+        <div class="doctor-card-header">
+            <h3><i class="fas fa-calendar-week"></i> Upcoming Appointments</h3>
+            <a href="appointments.php" class="doctor-view-all">View All <i class="fas fa-arrow-right"></i></a>
+        </div>
         
         <?php if (empty($upcomingAppointments)): ?>
-            <div class="empty-state">
+            <div class="doctor-empty-state">
                 <i class="fas fa-calendar-week"></i>
                 <p>No upcoming appointments in the next 7 days.</p>
             </div>
         <?php else: ?>
-            <div class="table-responsive">
-                <table class="data-table">
+            <div class="doctor-table-responsive">
+                <table class="doctor-data-table">
                     <thead>
                         <tr>
                             <th>Date & Time</th>
                             <th>Patient</th>
                             <th>Age</th>
                             <th>Blood Type</th>
-                            <th>Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($upcomingAppointments as $appointment): ?>
+                        <?php foreach ($upcomingAppointments as $appointment): 
+                            $linkData = getAppointmentLink($pdo, $appointment['appointmentId'], $appointment['patientId']);
+                        ?>
                             <tr>
-                                <td><?php echo date('M j, Y g:i A', strtotime($appointment['dateTime'])); ?></td>
-                                <td>
+                                <td data-label="Date & Time"><strong><?php echo date('M j, Y g:i A', strtotime($appointment['dateTime'])); ?></strong></td>
+                                <td data-label="Patient">
                                     <strong><?php echo htmlspecialchars($appointment['patientName']); ?></strong>
-                                    <br>
-                                    <small><?php echo htmlspecialchars($appointment['phoneNumber']); ?></small>
+                                    <br><small><?php echo htmlspecialchars($appointment['phoneNumber']); ?></small>
+                                    <?php if ($linkData['type'] === 'certificate'): ?>
+                                        <br><span class="doctor-cert-badge">Certificate</span>
+                                    <?php endif; ?>
                                 </td>
-                                <td><?php echo $appointment['age']; ?></td>
-                                <td><?php echo $appointment['bloodType'] ?: 'N/A'; ?></td>
-                                <td>
-                                    <span class="status-badge status-scheduled">
-                                        <?php echo ucfirst($appointment['status']); ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <a href="consultation.php?appointment_id=<?php echo $appointment['appointmentId']; ?>&patient_id=<?php echo $appointment['patientId']; ?>" class="btn btn-sm btn-primary">
-                                        <i class="fas fa-play"></i> Start
+                                <td data-label="Age"><?php echo $appointment['age']; ?></td>
+                                <td data-label="Blood Type"><?php echo $appointment['bloodType'] ?: 'N/A'; ?></td>
+                                <td data-label="Actions">
+                                    <a href="<?php echo $linkData['url']; ?>" class="<?php echo $linkData['class']; ?>">
+                                        <i class="fas <?php echo $linkData['icon']; ?>"></i> <?php echo $linkData['label']; ?>
                                     </a>
                                 </td>
                             </tr>
@@ -320,344 +482,34 @@ $upcomingAppointments = $stmt->fetchAll();
                     </tbody>
                 </table>
             </div>
-            <?php if (count($upcomingAppointments) >= 5): ?>
-                <div class="view-all">
-                    <a href="schedule.php" class="btn btn-outline">View All Appointments</a>
-                </div>
-            <?php endif; ?>
         <?php endif; ?>
     </div>
 </div>
 
 <style>
-.dashboard {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-}
-
-.welcome-section {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-    padding: 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 10px;
+.doctor-stat-card.certificates .doctor-stat-icon {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
     color: white;
 }
 
-.welcome-text h1 {
-    margin: 0 0 5px 0;
-    font-size: 24px;
-}
-
-.welcome-text p {
-    margin: 0;
-    opacity: 0.9;
-}
-
-.weather-widget {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: rgba(255,255,255,0.2);
-    padding: 10px 20px;
-    border-radius: 50px;
-}
-
-.weather-widget i {
-    font-size: 24px;
-}
-
-.temperature {
-    font-size: 24px;
-    font-weight: bold;
-}
-
-.weather-text {
-    font-size: 14px;
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
-}
-
-.stat-card {
-    background: white;
-    border-radius: 10px;
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    transition: transform 0.3s ease;
-}
-
-.stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-}
-
-.stat-icon {
-    width: 60px;
-    height: 60px;
-    background: #e3f2fd;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.stat-icon i {
-    font-size: 28px;
-    color: #1a75bc;
-}
-
-.stat-info h3 {
-    margin: 0;
-    font-size: 28px;
-    color: #333;
-}
-
-.stat-info p {
-    margin: 5px 0 0;
-    color: #666;
-    font-size: 14px;
-}
-
-/* Quick Actions - Horizontal Layout */
-.quick-actions {
-    background: white;
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 30px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.quick-actions h3 {
-    margin: 0 0 15px 0;
-    color: #333;
-}
-
-.actions-grid-horizontal {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-around;
-    gap: 15px;
-    flex-wrap: wrap;
-}
-
-.action-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 15px 20px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    text-decoration: none;
-    transition: all 0.3s ease;
-    min-width: 120px;
-    flex: 1;
-}
-
-.action-card:hover {
-    background: #e9ecef;
-    transform: translateY(-3px);
-}
-
-.action-card i {
-    font-size: 24px;
-    color: #1a75bc;
-}
-
-.action-card span {
-    color: #495057;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.appointments-section {
-    background: white;
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 30px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.appointments-section h3 {
-    margin: 0 0 20px 0;
-    color: #333;
-}
-
-.table-responsive {
-    overflow-x: auto;
-}
-
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.data-table th,
-.data-table td {
-    padding: 12px;
-    text-align: left;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.data-table th {
-    background: #f8f9fa;
+.doctor-cert-badge {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
     font-weight: 600;
-    color: #495057;
+    margin-top: 3px;
 }
 
-.data-table tr:hover {
-    background: #f8f9fa;
-}
-
-.status-badge {
-    display: inline-block;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.status-scheduled {
-    background: #e3f2fd;
-    color: #1976d2;
-}
-
-.status-confirmed {
-    background: #e8f5e9;
-    color: #388e3c;
-}
-
-.status-progress {
-    background: #fff3e0;
-    color: #f57c00;
-}
-
-.status-completed {
-    background: #e0f2fe;
-    color: #0284c7;
-}
-
-.status-cancelled {
-    background: #ffebee;
-    color: #d32f2f;
-}
-
-.btn-sm {
-    padding: 5px 10px;
-    font-size: 12px;
-    border-radius: 4px;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.btn-primary {
-    background: #1a75bc;
-    color: white;
-    border: none;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.btn-primary:hover {
-    background: #0e5a92;
-}
-
-.btn-info {
-    background: #17a2b8;
-    color: white;
-    border: none;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.btn-info:hover {
-    background: #138496;
-}
-
-.btn-outline {
-    background: transparent;
-    border: 1px solid #1a75bc;
-    color: #1a75bc;
-    padding: 8px 15px;
-    border-radius: 5px;
-    text-decoration: none;
-    display: inline-block;
-    transition: all 0.3s ease;
-}
-
-.btn-outline:hover {
-    background: #1a75bc;
+.doctor-btn-warning {
+    background: #f59e0b;
     color: white;
 }
 
-.empty-state {
-    text-align: center;
-    padding: 40px;
-    color: #6c757d;
-}
-
-.empty-state i {
-    font-size: 48px;
-    margin-bottom: 10px;
-    color: #dee2e6;
-}
-
-.empty-state p {
-    margin: 0;
-}
-
-.view-all {
-    text-align: center;
-    margin-top: 20px;
-}
-
-.text-muted {
-    color: #6c757d;
-    font-style: italic;
-}
-
-@media (max-width: 768px) {
-    .welcome-section {
-        flex-direction: column;
-        text-align: center;
-        gap: 15px;
-    }
-    
-    .stats-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .actions-grid-horizontal {
-        flex-direction: column;
-    }
-    
-    .action-card {
-        flex-direction: row;
-        justify-content: center;
-        gap: 15px;
-    }
-    
-    .data-table {
-        font-size: 12px;
-    }
-    
-    .data-table th,
-    .data-table td {
-        padding: 8px;
-    }
+.doctor-btn-warning:hover {
+    background: #d97706;
 }
 </style>
 

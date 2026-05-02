@@ -17,7 +17,6 @@ if (!$doctorId || !$date) {
     exit();
 }
 
-// Get booked time slots for this doctor on this date
 $stmt = $pdo->prepare("
     SELECT TIME(dateTime) as slot_time 
     FROM appointments 
@@ -33,4 +32,3 @@ foreach ($booked as $b) {
 }
 
 echo json_encode(['success' => true, 'booked_slots' => $bookedSlots]);
-?>

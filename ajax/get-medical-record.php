@@ -19,7 +19,9 @@ if (!$recordId) {
 $stmt = $pdo->prepare("
     SELECT mr.*, 
            CONCAT(pu.firstName, ' ', pu.lastName) as patientName,
-           CONCAT(du.firstName, ' ', du.lastName) as doctorName
+           CONCAT(du.firstName, ' ', du.lastName) as doctorName,
+           pu.email as patientEmail,
+           pu.phoneNumber as patientPhone
     FROM medical_records mr
     JOIN patients p ON mr.patientId = p.patientId
     JOIN users pu ON p.userId = pu.userId
@@ -36,21 +38,14 @@ if (!$record) {
     exit();
 }
 
-// Get vitals
 $vitalsStmt = $pdo->prepare("
     SELECT v.*, CONCAT(u.firstName, ' ', u.lastName) as recordedByName
     FROM vitals v
     LEFT JOIN staff s ON v.recordedBy = s.staffId
     LEFT JOIN users u ON s.userId = u.userId
-    WHERE v.recordId = ?
-    ORDER BY v.recordedDate DESC
+    WHERE v.recordId = ? ORDER BY v.recordedDate DESC
 ");
 $vitalsStmt->execute([$recordId]);
 $vitals = $vitalsStmt->fetchAll();
 
-echo json_encode([
-    'success' => true,
-    'record' => $record,
-    'vitals' => $vitals
-]);
-?>
+echo json_encode(['success' => true, 'record' => $record, 'vitals' => $vitals]);

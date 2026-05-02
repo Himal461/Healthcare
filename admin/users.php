@@ -4,202 +4,150 @@ require_once '../includes/auth.php';
 checkRole('admin');
 
 $pageTitle = "Manage Users - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="../css/admin.css">';
+$extraJS = '<script src="../js/admin.js"></script>';
 include '../includes/header.php';
 
-// Handle user actions
-if (isset($_GET['action']) && isset($_GET['id'])) {
-    $userId = (int)$_GET['id'];
-    $action = $_GET['action'];
+// Handle role update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_role'])) {
+    $userId = (int)$_POST['user_id'];
+    $newRole = $_POST['new_role'];
     
-    try {
-        switch ($action) {
-            case 'verify':
-                $stmt = $pdo->prepare("UPDATE users SET isVerified = 1, verificationCode = NULL WHERE userId = ?");
-                $stmt->execute([$userId]);
-                $_SESSION['success'] = "User verified successfully!";
-                logAction($_SESSION['user_id'], 'USER_VERIFY', "Verified user ID: $userId");
-                break;
-                
-            case 'delete':
-                $stmt = $pdo->prepare("DELETE FROM users WHERE userId = ?");
-                $stmt->execute([$userId]);
-                $_SESSION['success'] = "User deleted successfully!";
-                logAction($_SESSION['user_id'], 'USER_DELETE', "Deleted user ID: $userId");
-                break;
-                
-            case 'promote':
-                $newRole = $_GET['role'];
-                $allowedRoles = ['admin', 'doctor', 'nurse', 'staff', 'patient'];
-                if (in_array($newRole, $allowedRoles)) {
-                    $stmt = $pdo->prepare("UPDATE users SET role = ? WHERE userId = ?");
-                    $stmt->execute([$newRole, $userId]);
-                    $_SESSION['success'] = "User role updated successfully!";
-                    logAction($_SESSION['user_id'], 'USER_PROMOTE', "Changed user $userId role to $newRole");
-                }
-                break;
-                
-            case 'suspend':
-                $stmt = $pdo->prepare("UPDATE users SET isSuspended = 1 WHERE userId = ?");
-                $stmt->execute([$userId]);
-                $_SESSION['success'] = "User suspended successfully!";
-                logAction($_SESSION['user_id'], 'USER_SUSPEND', "Suspended user ID: $userId");
-                break;
-                
-            case 'activate':
-                $stmt = $pdo->prepare("UPDATE users SET isSuspended = 0 WHERE userId = ?");
-                $stmt->execute([$userId]);
-                $_SESSION['success'] = "User activated successfully!";
-                logAction($_SESSION['user_id'], 'USER_ACTIVATE', "Activated user ID: $userId");
-                break;
+    if (in_array($newRole, ['patient', 'staff', 'nurse', 'doctor', 'admin', 'accountant'])) {
+        if (updateUserRole($userId, $newRole)) {
+            $_SESSION['success'] = "User role updated successfully to: " . ucfirst($newRole);
+            logAction($_SESSION['user_id'], 'UPDATE_USER_ROLE', "Changed user $userId role to $newRole");
+        } else {
+            $_SESSION['error'] = "Failed to update user role.";
         }
-        
-        header("Location: users.php");
-        exit();
-    } catch (Exception $e) {
-        $error = "Failed to perform action. Please try again.";
     }
+    header("Location: users.php");
+    exit();
 }
 
-// Get filters
-$roleFilter = $_GET['role'] ?? '';
-$statusFilter = $_GET['status'] ?? '';
-$search = $_GET['search'] ?? '';
+// Handle delete
+if (isset($_GET['delete'])) {
+    $userId = (int)$_GET['delete'];
+    try {
+        $pdo->beginTransaction();
+        
+        $stmt = $pdo->prepare("DELETE FROM patients WHERE userId = ?");
+        $stmt->execute([$userId]);
+        
+        $stmt = $pdo->prepare("SELECT staffId FROM staff WHERE userId = ?");
+        $stmt->execute([$userId]);
+        $staff = $stmt->fetch();
+        
+        if ($staff) {
+            $stmt = $pdo->prepare("DELETE FROM doctors WHERE staffId = ?");
+            $stmt->execute([$staff['staffId']]);
+            $stmt = $pdo->prepare("DELETE FROM nurses WHERE staffId = ?");
+            $stmt->execute([$staff['staffId']]);
+            $stmt = $pdo->prepare("DELETE FROM accountants WHERE staffId = ?");
+            $stmt->execute([$staff['staffId']]);
+            $stmt = $pdo->prepare("DELETE FROM administrators WHERE staffId = ?");
+            $stmt->execute([$staff['staffId']]);
+            $stmt = $pdo->prepare("DELETE FROM staff WHERE userId = ?");
+            $stmt->execute([$userId]);
+        }
+        
+        $stmt = $pdo->prepare("DELETE FROM users WHERE userId = ?");
+        $stmt->execute([$userId]);
+        
+        $pdo->commit();
+        $_SESSION['success'] = "User deleted successfully!";
+        logAction($_SESSION['user_id'], 'DELETE_USER', "Deleted user $userId");
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        $_SESSION['error'] = "Cannot delete user: " . $e->getMessage();
+    }
+    header("Location: users.php");
+    exit();
+}
 
-// Build query
-$query = "
-    SELECT u.*, 
-           p.dateOfBirth,
-           p.bloodType,
-           p.address,
-           p.knownAllergies,
-           d.specialization,
-           d.consultationFee,
-           s.licenseNumber,
-           s.hireDate,
-           s.department,
-           s.position
+// Get all users
+$users = $pdo->query("
+    SELECT u.*, p.dateOfBirth, p.bloodType, d.specialization, s.department
     FROM users u
     LEFT JOIN patients p ON u.userId = p.userId
     LEFT JOIN staff s ON u.userId = s.userId
     LEFT JOIN doctors d ON s.staffId = d.staffId
-    WHERE 1=1
-";
+    ORDER BY u.dateCreated DESC
+")->fetchAll();
 
-$params = [];
-
-if ($roleFilter) {
-    $query .= " AND u.role = ?";
-    $params[] = $roleFilter;
-}
-
-if ($statusFilter === 'verified') {
-    $query .= " AND u.isVerified = 1";
-} elseif ($statusFilter === 'unverified') {
-    $query .= " AND u.isVerified = 0";
-}
-
-if ($search) {
-    $query .= " AND (u.username LIKE ? OR u.email LIKE ? OR u.firstName LIKE ? OR u.lastName LIKE ?)";
-    $searchTerm = "%$search%";
-    $params[] = $searchTerm;
-    $params[] = $searchTerm;
-    $params[] = $searchTerm;
-    $params[] = $searchTerm;
-}
-
-$query .= " ORDER BY u.dateCreated DESC";
-
-$stmt = $pdo->prepare($query);
-$stmt->execute($params);
-$users = $stmt->fetchAll();
-
-// Get statistics
-$totalUsers = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+$totalUsers = count($users);
 $totalDoctors = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'doctor'")->fetchColumn();
 $totalPatients = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'patient'")->fetchColumn();
 $pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified = 0")->fetchColumn();
+
+// Display messages
+$success = $_SESSION['success'] ?? null;
+$error = $_SESSION['error'] ?? null;
+unset($_SESSION['success'], $_SESSION['error']);
 ?>
 
-<div class="dashboard">
-    <div class="dashboard-header">
-        <h1>Manage Users</h1>
-        <p>Manage system users and their permissions</p>
+<div class="admin-container">
+    <div class="admin-page-header">
+        <div class="header-title">
+            <h1><i class="fas fa-users-cog"></i> Manage Users</h1>
+            <p>View and manage user accounts</p>
+        </div>
+        <div class="header-actions">
+            <a href="manage-users.php" class="admin-btn admin-btn-primary">
+                <i class="fas fa-user-plus"></i> Create User
+            </a>
+        </div>
     </div>
 
-    <?php if (isset($error)): ?>
-        <div class="alert alert-error"><?php echo htmlspecialchars($error); ?></div>
+    <?php if ($error): ?>
+        <div class="admin-alert admin-alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="admin-alert admin-alert-success">
+            <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+        </div>
     <?php endif; ?>
 
-    <!-- Users Statistics -->
-    <div class="stats-grid">
-        <div class="stat-card admin">
-            <h3><?php echo $totalUsers; ?></h3>
-            <p>Total Users</p>
+    <div class="admin-stats-grid">
+        <div class="admin-stat-card users">
+            <div class="admin-stat-icon"><i class="fas fa-users"></i></div>
+            <div class="admin-stat-content">
+                <h3><?php echo $totalUsers; ?></h3>
+                <p>Total Users</p>
+            </div>
         </div>
-        <div class="stat-card admin">
-            <h3><?php echo $totalDoctors; ?></h3>
-            <p>Doctors</p>
+        <div class="admin-stat-card doctors">
+            <div class="admin-stat-icon"><i class="fas fa-user-md"></i></div>
+            <div class="admin-stat-content">
+                <h3><?php echo $totalDoctors; ?></h3>
+                <p>Doctors</p>
+            </div>
         </div>
-        <div class="stat-card admin">
-            <h3><?php echo $totalPatients; ?></h3>
-            <p>Patients</p>
+        <div class="admin-stat-card patients">
+            <div class="admin-stat-icon"><i class="fas fa-user-injured"></i></div>
+            <div class="admin-stat-content">
+                <h3><?php echo $totalPatients; ?></h3>
+                <p>Patients</p>
+            </div>
         </div>
-        <div class="stat-card admin">
-            <h3><?php echo $pendingVerification; ?></h3>
-            <p>Pending Verification</p>
-        </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="card">
-        <div class="card-header">
-            <h3>Filter Users</h3>
-        </div>
-        <div class="card-body">
-            <form method="GET" action="" class="filter-form">
-                <div class="filter-row">
-                    <div class="filter-group">
-                        <label for="role">Role</label>
-                        <select name="role" id="role">
-                            <option value="">All Roles</option>
-                            <option value="admin" <?php echo $roleFilter === 'admin' ? 'selected' : ''; ?>>Admin</option>
-                            <option value="doctor" <?php echo $roleFilter === 'doctor' ? 'selected' : ''; ?>>Doctor</option>
-                            <option value="nurse" <?php echo $roleFilter === 'nurse' ? 'selected' : ''; ?>>Nurse</option>
-                            <option value="staff" <?php echo $roleFilter === 'staff' ? 'selected' : ''; ?>>Staff</option>
-                            <option value="patient" <?php echo $roleFilter === 'patient' ? 'selected' : ''; ?>>Patient</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="status">Status</label>
-                        <select name="status" id="status">
-                            <option value="">All Status</option>
-                            <option value="verified" <?php echo $statusFilter === 'verified' ? 'selected' : ''; ?>>Verified</option>
-                            <option value="unverified" <?php echo $statusFilter === 'unverified' ? 'selected' : ''; ?>>Unverified</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="search">Search</label>
-                        <input type="text" name="search" id="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="Name, email, username...">
-                    </div>
-                    
-                    <div class="filter-group filter-actions">
-                        <button type="submit" class="btn btn-primary">Apply Filters</button>
-                        <a href="users.php" class="btn btn-outline">Reset</a>
-                    </div>
-                </div>
-            </form>
+        <div class="admin-stat-card patients">
+            <div class="admin-stat-icon"><i class="fas fa-clock"></i></div>
+            <div class="admin-stat-content">
+                <h3><?php echo $pendingVerification; ?></h3>
+                <p>Pending Verification</p>
+            </div>
         </div>
     </div>
 
-    <!-- Users Table -->
-    <div class="card">
-        <div class="card-header">
-            <h3>All Users</h3>
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3><i class="fas fa-list"></i> All Users</h3>
         </div>
-        <div class="table-container">
-            <table class="data-table">
+        <div class="admin-table-responsive">
+            <table class="admin-data-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -212,135 +160,55 @@ $pendingVerification = $pdo->query("SELECT COUNT(*) FROM users WHERE isVerified 
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if (empty($users)): ?>
+                    <?php foreach ($users as $user): ?>
                         <tr>
-                            <td colspan="7" style="text-align: center;">No users found</td>
+                            <td data-label="ID">#<?php echo $user['userId']; ?></td>
+                            <td data-label="Name">
+                                <?php echo htmlspecialchars($user['firstName'].' '.$user['lastName']); ?><br>
+                                <small>@<?php echo $user['username']; ?></small>
+                            </td>
+                            <td data-label="Email"><?php echo $user['email']; ?><br><small><?php echo $user['phoneNumber']; ?></small></td>
+                            <td data-label="Role">
+                                <span class="admin-role-badge admin-role-<?php echo $user['role']; ?>">
+                                    <?php echo ucfirst($user['role']); ?>
+                                </span>
+                            </td>
+                            <td data-label="Details">
+                                <?php if ($user['role'] == 'doctor'): ?>
+                                    <?php echo $user['specialization'] ?? 'N/A'; ?>
+                                <?php elseif ($user['role'] == 'patient'): ?>
+                                    <?php echo $user['bloodType'] ?? 'N/A'; ?>
+                                <?php endif; ?>
+                            </td>
+                            <td data-label="Status">
+                                <span class="admin-status-badge <?php echo $user['isVerified'] ? 'admin-status-completed' : 'admin-status-cancelled'; ?>">
+                                    <?php echo $user['isVerified'] ? 'Verified' : 'Unverified'; ?>
+                                </span>
+                            </td>
+                            <td data-label="Actions">
+                                <div class="admin-action-buttons">
+                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Change user role?');">
+                                        <input type="hidden" name="user_id" value="<?php echo $user['userId']; ?>">
+                                        <select name="new_role" class="admin-btn admin-btn-sm" onchange="this.form.submit()" style="padding: 5px 10px;">
+                                            <option value="">Change Role</option>
+                                            <option value="patient" <?php echo $user['role']=='patient'?'selected':''; ?>>Patient</option>
+                                            <option value="staff" <?php echo $user['role']=='staff'?'selected':''; ?>>Staff</option>
+                                            <option value="nurse" <?php echo $user['role']=='nurse'?'selected':''; ?>>Nurse</option>
+                                            <option value="doctor" <?php echo $user['role']=='doctor'?'selected':''; ?>>Doctor</option>
+                                            <option value="accountant" <?php echo $user['role']=='accountant'?'selected':''; ?>>Accountant</option>
+                                            <option value="admin" <?php echo $user['role']=='admin'?'selected':''; ?>>Admin</option>
+                                        </select>
+                                        <input type="hidden" name="update_role" value="1">
+                                    </form>
+                                    <a href="?delete=<?php echo $user['userId']; ?>" class="admin-btn admin-btn-danger admin-btn-sm" onclick="return confirm('Delete user? This will permanently remove all associated data.')">Delete</a>
+                                </div>
+                            </td>
                         </tr>
-                    <?php else: ?>
-                        <?php foreach ($users as $user): ?>
-                            <tr>
-                                <td data-label="ID">#<?php echo $user['userId']; ?></td>
-                                <td data-label="Name">
-                                    <?php echo htmlspecialchars($user['firstName'] . ' ' . $user['lastName']); ?>
-                                    <br>
-                                    <small><?php echo htmlspecialchars($user['username']); ?></small>
-                                </td>
-                                <td data-label="Email"><?php echo htmlspecialchars($user['email']); ?></td>
-                                <td data-label="Role">
-                                    <span class="role-badge role-<?php echo $user['role']; ?>">
-                                        <?php echo ucfirst($user['role']); ?>
-                                    </span>
-                                </td>
-                                <td data-label="Details">
-                                    <?php if ($user['role'] === 'doctor'): ?>
-                                        <small>
-                                            <i class="fas fa-stethoscope"></i> <strong><?php echo htmlspecialchars($user['specialization'] ?? 'N/A'); ?></strong><br>
-                                            <i class="fas fa-dollar-sign"></i> $<?php echo number_format($user['consultationFee'] ?? 0, 2); ?><br>
-                                            <i class="fas fa-id-card"></i> License: <?php echo htmlspecialchars($user['licenseNumber'] ?? 'N/A'); ?>
-                                        </small>
-                                    <?php elseif ($user['role'] === 'nurse'): ?>
-                                        <small>
-                                            <i class="fas fa-heartbeat"></i> Nursing Staff<br>
-                                            <i class="fas fa-id-card"></i> License: <?php echo htmlspecialchars($user['licenseNumber'] ?? 'N/A'); ?>
-                                        </small>
-                                    <?php elseif ($user['role'] === 'staff'): ?>
-                                        <small>
-                                            <i class="fas fa-building"></i> <?php echo htmlspecialchars($user['department'] ?? 'N/A'); ?><br>
-                                            <i class="fas fa-briefcase"></i> <?php echo htmlspecialchars($user['position'] ?? 'N/A'); ?>
-                                        </small>
-                                    <?php elseif ($user['role'] === 'patient'): ?>
-                                        <small>
-                                            <i class="fas fa-tint"></i> Blood: <?php echo htmlspecialchars($user['bloodType'] ?? 'N/A'); ?><br>
-                                            <i class="fas fa-calendar"></i> DOB: <?php echo htmlspecialchars($user['dateOfBirth'] ?? 'N/A'); ?><br>
-                                            <i class="fas fa-allergies"></i> Allergies: <?php echo htmlspecialchars($user['knownAllergies'] ?? 'None'); ?>
-                                        </small>
-                                    <?php elseif ($user['role'] === 'admin'): ?>
-                                        <small>
-                                            <i class="fas fa-crown"></i> System Administrator
-                                        </small>
-                                    <?php endif; ?>
-                                </td>
-                                <td data-label="Status">
-                                    <?php if ($user['isVerified']): ?>
-                                        <span class="status-badge status-verified">Verified</span>
-                                    <?php else: ?>
-                                        <span class="status-badge status-unverified">Unverified</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td data-label="Actions">
-                                    <div class="action-buttons">
-                                        <?php if (!$user['isVerified']): ?>
-                                            <a href="?action=verify&id=<?php echo $user['userId']; ?>" 
-                                               class="btn btn-success btn-sm" 
-                                               title="Verify User">
-                                                <i class="fas fa-check"></i>
-                                            </a>
-                                        <?php endif; ?>
-                                        
-                                        <div class="dropdown">
-                                            <button class="btn btn-primary btn-sm dropdown-toggle" data-dropdown="role-menu-<?php echo $user['userId']; ?>">
-                                                <i class="fas fa-user-tag"></i> Role
-                                            </button>
-                                            <div id="role-menu-<?php echo $user['userId']; ?>" class="dropdown-menu">
-                                                <?php 
-                                                $roles = ['patient', 'staff', 'nurse', 'doctor', 'admin'];
-                                                foreach ($roles as $role): 
-                                                    if ($role !== $user['role']):
-                                                ?>
-                                                    <a href="?action=promote&id=<?php echo $user['userId']; ?>&role=<?php echo $role; ?>" class="dropdown-item">
-                                                        <?php echo ucfirst($role); ?>
-                                                    </a>
-                                                <?php 
-                                                    endif;
-                                                endforeach; 
-                                                ?>
-                                            </div>
-                                        </div>
-                                        
-                                        <a href="?action=delete&id=<?php echo $user['userId']; ?>" 
-                                           class="btn btn-danger btn-sm" 
-                                           onclick="return confirm('Are you sure you want to delete this user? This action cannot be undone.')"
-                                           title="Delete User">
-                                            <i class="fas fa-trash"></i>
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
-
-<script>
-// Dropdown functionality
-document.querySelectorAll('.dropdown-toggle').forEach(button => {
-    button.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const dropdownId = this.getAttribute('data-dropdown');
-        const dropdown = document.getElementById(dropdownId);
-        
-        document.querySelectorAll('.dropdown-menu').forEach(menu => {
-            if (menu.id !== dropdownId) {
-                menu.classList.remove('show');
-            }
-        });
-        
-        dropdown.classList.toggle('show');
-    });
-});
-
-document.addEventListener('click', function(e) {
-    if (!e.target.closest('.dropdown')) {
-        document.querySelectorAll('.dropdown-menu').forEach(menu => {
-            menu.classList.remove('show');
-        });
-    }
-});
-</script>
 
 <?php include '../includes/footer.php'; ?>

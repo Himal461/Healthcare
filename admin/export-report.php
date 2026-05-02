@@ -3,13 +3,12 @@ require_once '../includes/config.php';
 require_once '../includes/auth.php';
 checkRole('admin');
 
-// Get report parameters
 $reportType = $_GET['type'] ?? 'appointments';
 $dateFrom = $_GET['date_from'] ?? date('Y-m-d', strtotime('-30 days'));
 $dateTo = $_GET['date_to'] ?? date('Y-m-d');
 
 // Set headers for CSV download
-header('Content-Type: text/csv');
+header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $reportType . '_report_' . date('Y-m-d') . '.csv"');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -17,276 +16,301 @@ header('Expires: 0');
 // Create output stream
 $output = fopen('php://output', 'w');
 
-// Add UTF-8 BOM for Excel compatibility
+// Add BOM for UTF-8 support in Excel
 fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
 
-// Generate report based on type
+// Export based on report type
 if ($reportType === 'appointments') {
-    // Headers
-    fputcsv($output, ['Appointments Report', 'From: ' . $dateFrom, 'To: ' . $dateTo]);
+    // Header rows
+    fputcsv($output, ['APPOINTMENTS REPORT']);
+    fputcsv($output, ['Generated:', date('Y-m-d H:i:s')]);
+    fputcsv($output, ['Period:', $dateFrom, 'to', $dateTo]);
     fputcsv($output, []);
-    fputcsv($output, ['Date', 'Patient', 'Doctor', 'Specialization', 'Status', 'Reason', 'Notes']);
+    fputcsv($output, ['Appointment ID', 'Date', 'Time', 'Patient Name', 'Patient Email', 'Patient Phone', 'Doctor Name', 'Specialization', 'Status', 'Reason']);
     
-    // Data
     $stmt = $pdo->prepare("
-        SELECT 
-            a.dateTime,
-            CONCAT(pu.firstName, ' ', pu.lastName) as patientName,
-            CONCAT(du.firstName, ' ', du.lastName) as doctorName,
-            d.specialization,
-            a.status,
-            a.reason,
-            a.notes
+        SELECT a.appointmentId, a.dateTime, a.status, a.reason,
+               CONCAT(pu.firstName, ' ', pu.lastName) as patientName,
+               pu.email as patientEmail,
+               pu.phoneNumber as patientPhone,
+               CONCAT(du.firstName, ' ', du.lastName) as doctorName,
+               d.specialization
         FROM appointments a
-        JOIN patients p ON a.patientId = p.patientId
+        JOIN patients p ON a.patientId = p.patientId 
         JOIN users pu ON p.userId = pu.userId
-        JOIN doctors d ON a.doctorId = d.doctorId
-        JOIN staff s ON d.staffId = s.staffId
+        JOIN doctors d ON a.doctorId = d.doctorId 
+        JOIN staff s ON d.staffId = s.staffId 
         JOIN users du ON s.userId = du.userId
         WHERE DATE(a.dateTime) BETWEEN ? AND ?
         ORDER BY a.dateTime DESC
     ");
     $stmt->execute([$dateFrom, $dateTo]);
-    $appointments = $stmt->fetchAll();
     
-    foreach ($appointments as $appointment) {
+    while ($row = $stmt->fetch()) {
         fputcsv($output, [
-            date('Y-m-d H:i', strtotime($appointment['dateTime'])),
-            $appointment['patientName'],
-            'Dr. ' . $appointment['doctorName'],
-            $appointment['specialization'],
-            ucfirst($appointment['status']),
-            $appointment['reason'],
-            $appointment['notes']
+            $row['appointmentId'],
+            date('Y-m-d', strtotime($row['dateTime'])),
+            date('H:i', strtotime($row['dateTime'])),
+            $row['patientName'],
+            $row['patientEmail'],
+            $row['patientPhone'],
+            'Dr. ' . $row['doctorName'],
+            $row['specialization'],
+            ucfirst($row['status']),
+            $row['reason'] ?: '-'
         ]);
     }
     
-} elseif ($reportType === 'revenue') {
-    // Headers
-    fputcsv($output, ['Revenue Report', 'From: ' . $dateFrom, 'To: ' . $dateTo]);
-    fputcsv($output, []);
-    fputcsv($output, ['Date', 'Bill ID', 'Patient', 'Amount', 'Tax', 'Discount', 'Total', 'Status', 'Payment Method', 'Description']);
-    
-    // Data
+    // Summary
     $stmt = $pdo->prepare("
-        SELECT 
-            b.createdAt,
-            b.billId,
-            CONCAT(u.firstName, ' ', u.lastName) as patientName,
-            b.amount,
-            b.tax,
-            b.discount,
-            b.totalAmount,
-            b.status,
-            b.paymentMethod,
-            b.description
-        FROM billing b
-        JOIN patients p ON b.patientId = p.patientId
-        JOIN users u ON p.userId = u.userId
-        WHERE DATE(b.createdAt) BETWEEN ? AND ?
-        ORDER BY b.createdAt DESC
+        SELECT status, COUNT(*) as count 
+        FROM appointments 
+        WHERE DATE(dateTime) BETWEEN ? AND ? 
+        GROUP BY status
     ");
     $stmt->execute([$dateFrom, $dateTo]);
-    $bills = $stmt->fetchAll();
+    $summary = $stmt->fetchAll();
     
-    foreach ($bills as $bill) {
+    fputcsv($output, []);
+    fputcsv($output, ['SUMMARY BY STATUS']);
+    foreach ($summary as $s) {
+        fputcsv($output, [ucfirst($s['status']), $s['count']]);
+    }
+
+} elseif ($reportType === 'revenue') {
+    fputcsv($output, ['REVENUE REPORT']);
+    fputcsv($output, ['Generated:', date('Y-m-d H:i:s')]);
+    fputcsv($output, ['Period:', $dateFrom, 'to', $dateTo]);
+    fputcsv($output, []);
+    fputcsv($output, ['Bill ID', 'Date', 'Patient Name', 'Patient Email', 'Consultation Fee', 'Additional Charges', 'Service Charge', 'GST', 'Total Amount', 'Status', 'Paid Date']);
+    
+    $stmt = $pdo->prepare("
+        SELECT b.*, 
+               CONCAT(u.firstName, ' ', u.lastName) as patientName,
+               u.email as patientEmail
+        FROM bills b
+        JOIN patients p ON b.patientId = p.patientId
+        JOIN users u ON p.userId = u.userId
+        WHERE DATE(b.generatedAt) BETWEEN ? AND ?
+        ORDER BY b.generatedAt DESC
+    ");
+    $stmt->execute([$dateFrom, $dateTo]);
+    
+    $totalRevenue = 0;
+    $totalPaid = 0;
+    $totalUnpaid = 0;
+    
+    while ($row = $stmt->fetch()) {
+        $totalRevenue += $row['totalAmount'];
+        if ($row['status'] == 'paid') $totalPaid += $row['totalAmount'];
+        if ($row['status'] == 'unpaid') $totalUnpaid += $row['totalAmount'];
+        
         fputcsv($output, [
-            date('Y-m-d', strtotime($bill['createdAt'])),
-            '#' . $bill['billId'],
-            $bill['patientName'],
-            number_format($bill['amount'], 2),
-            number_format($bill['tax'], 2),
-            number_format($bill['discount'], 2),
-            number_format($bill['totalAmount'], 2),
-            ucfirst($bill['status']),
-            $bill['paymentMethod'] ?: 'Not Specified',
-            $bill['description']
+            $row['billId'],
+            date('Y-m-d', strtotime($row['generatedAt'])),
+            $row['patientName'],
+            $row['patientEmail'],
+            number_format($row['consultationFee'], 2),
+            number_format($row['additionalCharges'], 2),
+            number_format($row['serviceCharge'], 2),
+            number_format($row['gst'], 2),
+            number_format($row['totalAmount'], 2),
+            ucfirst($row['status']),
+            $row['paidAt'] ? date('Y-m-d H:i', strtotime($row['paidAt'])) : '-'
         ]);
     }
     
-    // Add summary
     fputcsv($output, []);
-    fputcsv($output, ['Summary']);
-    $totalPaid = $pdo->prepare("SELECT SUM(totalAmount) as total FROM billing WHERE status = 'paid' AND DATE(createdAt) BETWEEN ? AND ?");
-    $totalPaid->execute([$dateFrom, $dateTo]);
-    $paid = $totalPaid->fetch()['total'] ?? 0;
-    
-    $totalPending = $pdo->prepare("SELECT SUM(totalAmount) as total FROM billing WHERE status = 'pending' AND DATE(createdAt) BETWEEN ? AND ?");
-    $totalPending->execute([$dateFrom, $dateTo]);
-    $pending = $totalPending->fetch()['total'] ?? 0;
-    
-    fputcsv($output, ['Total Paid', '$' . number_format($paid, 2)]);
-    fputcsv($output, ['Total Pending', '$' . number_format($pending, 2)]);
-    fputcsv($output, ['Total Revenue', '$' . number_format($paid + $pending, 2)]);
-    
+    fputcsv($output, ['SUMMARY']);
+    fputcsv($output, ['Total Revenue (All Bills):', '$' . number_format($totalRevenue, 2)]);
+    fputcsv($output, ['Total Paid:', '$' . number_format($totalPaid, 2)]);
+    fputcsv($output, ['Total Unpaid:', '$' . number_format($totalUnpaid, 2)]);
+    fputcsv($output, ['Total Cancelled:', '$' . number_format($totalRevenue - $totalPaid - $totalUnpaid, 2)]);
+
 } elseif ($reportType === 'patients') {
-    // Headers
-    fputcsv($output, ['Patients Report', 'Generated: ' . date('Y-m-d H:i:s')]);
+    fputcsv($output, ['PATIENTS REPORT']);
+    fputcsv($output, ['Generated:', date('Y-m-d H:i:s')]);
+    fputcsv($output, ['Registration Period:', $dateFrom, 'to', $dateTo]);
     fputcsv($output, []);
-    fputcsv($output, ['Patient ID', 'Name', 'Email', 'Phone', 'Date of Birth', 'Age', 'Blood Type', 'Address', 'Emergency Contact', 'Registration Date']);
+    fputcsv($output, ['Patient ID', 'Username', 'First Name', 'Last Name', 'Email', 'Phone', 'Date of Birth', 'Blood Type', 'Address', 'Allergies', 'Registered Date']);
     
-    // Data
     $stmt = $pdo->prepare("
-        SELECT 
-            p.patientId,
-            CONCAT(u.firstName, ' ', u.lastName) as name,
-            u.email,
-            u.phoneNumber,
-            p.dateOfBirth,
-            p.bloodType,
-            p.address,
-            p.emergencyContactName,
-            p.emergencyContactPhone,
-            u.dateCreated
+        SELECT p.patientId, u.username, u.firstName, u.lastName, u.email, u.phoneNumber,
+               p.dateOfBirth, p.bloodType, p.address, p.knownAllergies, u.dateCreated
         FROM patients p
         JOIN users u ON p.userId = u.userId
-        WHERE DATE(u.dateCreated) BETWEEN ? AND ?
+        WHERE u.role = 'patient' AND DATE(u.dateCreated) BETWEEN ? AND ?
         ORDER BY u.dateCreated DESC
     ");
     $stmt->execute([$dateFrom, $dateTo]);
-    $patients = $stmt->fetchAll();
     
-    foreach ($patients as $patient) {
-        $age = $patient['dateOfBirth'] ? date_diff(date_create($patient['dateOfBirth']), date_create('today'))->y : 'N/A';
+    while ($row = $stmt->fetch()) {
         fputcsv($output, [
-            $patient['patientId'],
-            $patient['name'],
-            $patient['email'],
-            $patient['phoneNumber'],
-            $patient['dateOfBirth'],
-            $age,
-            $patient['bloodType'] ?: 'Unknown',
-            $patient['address'],
-            $patient['emergencyContactName'] . ' (' . $patient['emergencyContactPhone'] . ')',
-            date('Y-m-d', strtotime($patient['dateCreated']))
+            $row['patientId'],
+            $row['username'],
+            $row['firstName'],
+            $row['lastName'],
+            $row['email'],
+            $row['phoneNumber'] ?: '-',
+            $row['dateOfBirth'] ?: '-',
+            $row['bloodType'] ?: '-',
+            $row['address'] ?: '-',
+            $row['knownAllergies'] ?: '-',
+            date('Y-m-d', strtotime($row['dateCreated']))
         ]);
     }
     
-} elseif ($reportType === 'doctors') {
-    // Headers
-    fputcsv($output, ['Doctors Performance Report', 'From: ' . $dateFrom, 'To: ' . $dateTo]);
-    fputcsv($output, []);
-    fputcsv($output, ['Doctor Name', 'Specialization', 'Total Appointments', 'Completed', 'Cancelled', 'Completion Rate (%)']);
-    
-    // Data
+    // Summary
     $stmt = $pdo->prepare("
-        SELECT 
-            CONCAT(u.firstName, ' ', u.lastName) as doctorName,
-            d.specialization,
-            COUNT(a.appointmentId) as total_appointments,
-            SUM(CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END) as completed,
-            SUM(CASE WHEN a.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
-            ROUND(SUM(CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END) / NULLIF(COUNT(a.appointmentId), 0) * 100, 2) as completion_rate
-        FROM doctors d
-        JOIN staff s ON d.staffId = s.staffId
-        JOIN users u ON s.userId = u.userId
-        LEFT JOIN appointments a ON d.doctorId = a.doctorId AND DATE(a.dateTime) BETWEEN ? AND ?
-        GROUP BY d.doctorId
-        ORDER BY completion_rate DESC
+        SELECT COUNT(*) as total FROM users 
+        WHERE role = 'patient' AND DATE(dateCreated) BETWEEN ? AND ?
     ");
     $stmt->execute([$dateFrom, $dateTo]);
-    $doctors = $stmt->fetchAll();
+    $total = $stmt->fetchColumn();
     
-    foreach ($doctors as $doctor) {
+    fputcsv($output, []);
+    fputcsv($output, ['Total New Patients:', $total]);
+
+} elseif ($reportType === 'staff') {
+    fputcsv($output, ['STAFF REPORT']);
+    fputcsv($output, ['Generated:', date('Y-m-d H:i:s')]);
+    fputcsv($output, []);
+    fputcsv($output, ['Staff ID', 'Username', 'First Name', 'Last Name', 'Email', 'Phone', 'Role', 'Department', 'Position', 'License Number', 'Hire Date']);
+    
+    $stmt = $pdo->query("
+        SELECT s.staffId, u.username, u.firstName, u.lastName, u.email, u.phoneNumber, u.role,
+               s.department, s.position, s.licenseNumber, s.hireDate
+        FROM staff s
+        JOIN users u ON s.userId = u.userId
+        ORDER BY u.role, u.firstName
+    ");
+    
+    while ($row = $stmt->fetch()) {
         fputcsv($output, [
-            'Dr. ' . $doctor['doctorName'],
-            $doctor['specialization'],
-            $doctor['total_appointments'],
-            $doctor['completed'],
-            $doctor['cancelled'],
-            $doctor['completion_rate'] . '%'
+            $row['staffId'],
+            $row['username'],
+            $row['firstName'],
+            $row['lastName'],
+            $row['email'],
+            $row['phoneNumber'] ?: '-',
+            ucfirst($row['role']),
+            $row['department'] ?: '-',
+            $row['position'] ?: '-',
+            $row['licenseNumber'] ?: '-',
+            $row['hireDate'] ?: '-'
         ]);
     }
     
-} elseif ($reportType === 'lab-tests') {
-    // Headers
-    fputcsv($output, ['Lab Tests Report', 'From: ' . $dateFrom, 'To: ' . $dateTo]);
-    fputcsv($output, []);
-    fputcsv($output, ['Order Date', 'Patient', 'Test Name', 'Test Type', 'Ordered By', 'Status', 'Results', 'Notes']);
+    // Summary by role
+    $stmt = $pdo->query("
+        SELECT u.role, COUNT(*) as count 
+        FROM staff s 
+        JOIN users u ON s.userId = u.userId 
+        GROUP BY u.role
+    ");
+    $summary = $stmt->fetchAll();
     
-    // Data
+    fputcsv($output, []);
+    fputcsv($output, ['SUMMARY BY ROLE']);
+    foreach ($summary as $s) {
+        fputcsv($output, [ucfirst($s['role']), $s['count']]);
+    }
+
+} elseif ($reportType === 'lab-tests') {
+    fputcsv($output, ['LAB TESTS REPORT']);
+    fputcsv($output, ['Generated:', date('Y-m-d H:i:s')]);
+    fputcsv($output, ['Period:', $dateFrom, 'to', $dateTo]);
+    fputcsv($output, []);
+    fputcsv($output, ['Test ID', 'Ordered Date', 'Patient Name', 'Test Name', 'Test Type', 'Ordered By', 'Status', 'Performed Date', 'Results']);
+    
     $stmt = $pdo->prepare("
-        SELECT 
-            lt.orderedDate,
-            CONCAT(u.firstName, ' ', u.lastName) as patientName,
-            lt.testName,
-            lt.testType,
-            CONCAT(du.firstName, ' ', du.lastName) as orderedByName,
-            lt.status,
-            lt.results,
-            lt.notes
+        SELECT lt.*, 
+               CONCAT(u.firstName, ' ', u.lastName) as patientName,
+               CONCAT(du.firstName, ' ', du.lastName) as orderedByName
         FROM lab_tests lt
         JOIN patients p ON lt.patientId = p.patientId
         JOIN users u ON p.userId = u.userId
-        JOIN doctors d ON lt.orderedBy = d.doctorId
-        JOIN staff s ON d.staffId = s.staffId
-        JOIN users du ON s.userId = du.userId
+        LEFT JOIN doctors d ON lt.orderedBy = d.doctorId
+        LEFT JOIN staff s ON d.staffId = s.staffId
+        LEFT JOIN users du ON s.userId = du.userId
         WHERE DATE(lt.orderedDate) BETWEEN ? AND ?
         ORDER BY lt.orderedDate DESC
     ");
     $stmt->execute([$dateFrom, $dateTo]);
-    $tests = $stmt->fetchAll();
     
-    foreach ($tests as $test) {
+    while ($row = $stmt->fetch()) {
         fputcsv($output, [
-            date('Y-m-d', strtotime($test['orderedDate'])),
-            $test['patientName'],
-            $test['testName'],
-            $test['testType'],
-            'Dr. ' . $test['orderedByName'],
-            ucfirst($test['status']),
-            $test['results'],
-            $test['notes']
+            $row['testId'],
+            date('Y-m-d H:i', strtotime($row['orderedDate'])),
+            $row['patientName'],
+            $row['testName'],
+            $row['testType'] ?: '-',
+            $row['orderedByName'] ?: 'N/A',
+            ucfirst(str_replace('-', ' ', $row['status'])),
+            $row['performedDate'] ? date('Y-m-d H:i', strtotime($row['performedDate'])) : '-',
+            $row['results'] ? substr(str_replace(["\r", "\n"], ' ', $row['results']), 0, 100) . '...' : '-'
         ]);
     }
     
-} elseif ($reportType === 'prescriptions') {
-    // Headers
-    fputcsv($output, ['Prescriptions Report', 'From: ' . $dateFrom, 'To: ' . $dateTo]);
-    fputcsv($output, []);
-    fputcsv($output, ['Date', 'Patient', 'Doctor', 'Medication', 'Dosage', 'Frequency', 'Status', 'Start Date', 'End Date']);
-    
-    // Data
+    // Summary by status
     $stmt = $pdo->prepare("
-        SELECT 
-            p.createdAt,
-            CONCAT(u.firstName, ' ', u.lastName) as patientName,
-            CONCAT(du.firstName, ' ', du.lastName) as doctorName,
-            p.medicationName,
-            p.dosage,
-            p.frequency,
-            p.status,
-            p.startDate,
-            p.endDate
-        FROM prescriptions p
-        JOIN medical_records mr ON p.recordId = mr.recordId
-        JOIN patients pt ON mr.patientId = pt.patientId
-        JOIN users u ON pt.userId = u.userId
-        JOIN doctors d ON p.prescribedBy = d.doctorId
-        JOIN staff s ON d.staffId = s.staffId
-        JOIN users du ON s.userId = du.userId
-        WHERE DATE(p.createdAt) BETWEEN ? AND ?
-        ORDER BY p.createdAt DESC
+        SELECT status, COUNT(*) as count 
+        FROM lab_tests 
+        WHERE DATE(orderedDate) BETWEEN ? AND ? 
+        GROUP BY status
     ");
     $stmt->execute([$dateFrom, $dateTo]);
-    $prescriptions = $stmt->fetchAll();
+    $summary = $stmt->fetchAll();
     
-    foreach ($prescriptions as $prescription) {
+    fputcsv($output, []);
+    fputcsv($output, ['SUMMARY BY STATUS']);
+    foreach ($summary as $s) {
+        fputcsv($output, [ucfirst(str_replace('-', ' ', $s['status'])), $s['count']]);
+    }
+
+} elseif ($reportType === 'salaries') {
+    fputcsv($output, ['SALARY PAYMENTS REPORT']);
+    fputcsv($output, ['Generated:', date('Y-m-d H:i:s')]);
+    fputcsv($output, ['Period:', $dateFrom, 'to', $dateTo]);
+    fputcsv($output, []);
+    fputcsv($output, ['Salary ID', 'Payment Date', 'Employee Name', 'Role', 'Salary Month', 'Amount', 'Processed By', 'Notes']);
+    
+    $stmt = $pdo->prepare("
+        SELECT sp.*, 
+               CONCAT(u.firstName, ' ', u.lastName) as employeeName,
+               CONCAT(pu.firstName, ' ', pu.lastName) as paidByName
+        FROM salary_payments sp
+        JOIN users u ON sp.userId = u.userId
+        LEFT JOIN users pu ON sp.paidBy = pu.userId
+        WHERE DATE(sp.paymentDate) BETWEEN ? AND ? AND sp.status = 'paid'
+        ORDER BY sp.paymentDate DESC
+    ");
+    $stmt->execute([$dateFrom, $dateTo]);
+    
+    $totalSalaries = 0;
+    
+    while ($row = $stmt->fetch()) {
+        $totalSalaries += $row['amount'];
         fputcsv($output, [
-            date('Y-m-d', strtotime($prescription['createdAt'])),
-            $prescription['patientName'],
-            'Dr. ' . $prescription['doctorName'],
-            $prescription['medicationName'],
-            $prescription['dosage'],
-            $prescription['frequency'],
-            ucfirst($prescription['status']),
-            $prescription['startDate'],
-            $prescription['endDate'] ?: 'Ongoing'
+            $row['salaryId'],
+            date('Y-m-d H:i', strtotime($row['paymentDate'])),
+            $row['employeeName'],
+            ucfirst($row['role']),
+            date('F Y', strtotime($row['salaryMonth'])),
+            number_format($row['amount'], 2),
+            $row['paidByName'] ?: 'System',
+            $row['notes'] ?: '-'
         ]);
     }
+    
+    fputcsv($output, []);
+    fputcsv($output, ['Total Salary Payments:', '$' . number_format($totalSalaries, 2)]);
+    fputcsv($output, ['Number of Payments:', $stmt->rowCount()]);
 }
 
 fclose($output);
+
+// Log the export action
 logAction($_SESSION['user_id'], 'EXPORT_REPORT', "Exported $reportType report from $dateFrom to $dateTo");
 exit();
 ?>

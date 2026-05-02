@@ -1,6 +1,5 @@
 <?php
 function isLoggedIn() {
-    // Check if session exists and user is logged in
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
@@ -14,19 +13,41 @@ function checkAuth() {
     }
 }
 
+/**
+ * Check if current user has the required role
+ * @param string|array $requiredRole Single role or array of allowed roles
+ */
 function checkRole($requiredRole) {
     checkAuth();
     
-    if (!hasPermission($requiredRole)) {
-        $_SESSION['error'] = "You don't have permission to access this page.";
-        redirect('dashboard.php');
+    $userRole = $_SESSION['user_role'] ?? '';
+    
+    // Debug log
+    error_log("checkRole: User role = '$userRole', Required = " . print_r($requiredRole, true));
+    
+    // Admin has access to everything
+    if ($userRole === 'admin') {
+        return true;
     }
+    
+    $allowedRoles = is_array($requiredRole) ? $requiredRole : [$requiredRole];
+    
+    // Check if user's role is in allowed roles
+    if (in_array($userRole, $allowedRoles)) {
+        return true;
+    }
+    
+    $_SESSION['error'] = "You don't have permission to access this page. Your role: {$userRole}";
+    redirect('dashboard.php');
+}
+
+function checkAnyRole($roles) {
+    return checkRole($roles);
 }
 
 function loginUser($userId, $username, $role) {
     global $pdo;
     
-    // Regenerate session ID to prevent session fixation
     session_regenerate_id(true);
     
     $_SESSION['user_id'] = $userId;
@@ -36,7 +57,6 @@ function loginUser($userId, $username, $role) {
     $_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR'];
     $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
     
-    // Update last login
     try {
         $stmt = $pdo->prepare("UPDATE users SET lastLogin = NOW() WHERE userId = ?");
         $stmt->execute([$userId]);
@@ -44,38 +64,38 @@ function loginUser($userId, $username, $role) {
         error_log("Failed to update last login: " . $e->getMessage());
     }
     
-    logAction($userId, 'LOGIN', "User logged in successfully");
+    logAction($userId, 'LOGIN', "User logged in successfully as {$role}");
 }
 
-function logoutUser() {
-    // Store user ID before destroying session
-    $userId = $_SESSION['user_id'] ?? null;
-    
-    if ($userId) {
-        try {
-            logAction($userId, 'LOGOUT', "User logged out");
-        } catch (Exception $e) {
-            error_log("Failed to log logout action: " . $e->getMessage());
-        }
-    }
-    
-    // Clear all session variables
-    $_SESSION = array();
-    
-    // Delete the session cookie
-    if (isset($_COOKIE[session_name()])) {
-        setcookie(session_name(), '', time() - 3600, '/');
-    }
-    
-    // Destroy the session
-    session_destroy();
-    
-    // Clear remember me cookie
-    if (isset($_COOKIE['remember_token'])) {
-        setcookie('remember_token', '', time() - 3600, '/');
-    }
-    
-    // Redirect to login page
-    redirect('login.php');
+function redirect($url) {
+    // Remove any leading slashes and SITE_URL from the URL
+    $url = ltrim($url, '/');
+    $fullUrl = SITE_URL . '/' . $url;
+    header("Location: " . $fullUrl);
+    exit();
 }
-?>
+
+function hasBill($appointmentId) {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM bills WHERE appointmentId = ?");
+        $stmt->execute([$appointmentId]);
+        return $stmt->fetchColumn() > 0;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+function isAccountant() {
+    return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'accountant';
+}
+
+function canViewFinance() {
+    $role = $_SESSION['user_role'] ?? '';
+    return in_array($role, ['admin', 'accountant']);
+}
+
+function canProcessSalary() {
+    $role = $_SESSION['user_role'] ?? '';
+    return in_array($role, ['admin', 'accountant']);
+}

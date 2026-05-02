@@ -9,28 +9,26 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$doctorId = $_GET['doctor_id'] ?? null;
-$datetime = $_GET['datetime'] ?? null;
+$doctorId = (int)($_GET['doctor_id'] ?? 0);
+$date = $_GET['date'] ?? '';
+$time = $_GET['time'] ?? '';
 
-if (!$doctorId || !$datetime) {
+if (!$doctorId || !$date || !$time) {
     echo json_encode(['available' => false, 'error' => 'Missing parameters']);
     exit();
 }
 
-$date = date('Y-m-d', strtotime($datetime));
-$time = date('H:i:s', strtotime($datetime));
+if (strlen($time) === 5 && strpos($time, ':') === 2) {
+    $time .= ':00';
+}
 
 $stmt = $pdo->prepare("
     SELECT COUNT(*) FROM appointments
-    WHERE doctorId = ?
-    AND DATE(dateTime) = ?
-    AND TIME(dateTime) = ?
+    WHERE doctorId = ? AND DATE(dateTime) = ? AND TIME(dateTime) = ?
     AND status NOT IN ('cancelled','no-show')
 ");
-
 $stmt->execute([$doctorId, $date, $time]);
 
 echo json_encode([
     'available' => $stmt->fetchColumn() == 0
 ]);
-?>

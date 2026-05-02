@@ -3,135 +3,213 @@ require_once '../includes/config.php';
 require_once '../includes/auth.php';
 checkRole('staff');
 
-$pageTitle = "Book Appointment for Patient - HealthManagement";
+$pageTitle = "Book Appointment - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="../css/staff.css">';
 include '../includes/header.php';
 
 $userId = $_SESSION['user_id'];
+$searchTerm = $_GET['search'] ?? '';
+$selectedPatient = null;
+$patientId = $_GET['patient_id'] ?? null;
 
 // Get staff details
 $stmt = $pdo->prepare("
     SELECT s.*, CONCAT(u.firstName, ' ', u.lastName) as staffName
-    FROM staff s
-    JOIN users u ON s.userId = u.userId
-    WHERE u.userId = ?
+    FROM staff s JOIN users u ON s.userId = u.userId WHERE u.userId = ?
 ");
 $stmt->execute([$userId]);
 $staff = $stmt->fetch();
 
-// Handle search patient
-$searchTerm = $_GET['search'] ?? '';
-$selectedPatient = null;
-$patientId = null;
-
-if (isset($_GET['patient_id'])) {
-    $patientId = $_GET['patient_id'];
-    $stmt = $pdo->prepare("
-        SELECT p.patientId, u.userId, u.firstName, u.lastName, u.email, u.phoneNumber,
-               p.dateOfBirth, p.bloodType, p.address
-        FROM patients p
-        JOIN users u ON p.userId = u.userId
-        WHERE p.patientId = ?
-    ");
-    $stmt->execute([$patientId]);
-    $selectedPatient = $stmt->fetch();
-}
-
-// Handle patient search results
+// Handle patient search
 $searchResults = [];
 if ($searchTerm) {
     $stmt = $pdo->prepare("
-        SELECT p.patientId, u.userId, u.firstName, u.lastName, u.email, u.phoneNumber
-        FROM patients p
-        JOIN users u ON p.userId = u.userId
-        WHERE u.firstName LIKE ? OR u.lastName LIKE ? OR u.email LIKE ? OR u.phoneNumber LIKE ?
-        ORDER BY u.firstName
-        LIMIT 20
+        SELECT p.patientId, u.firstName, u.lastName, u.email, u.phoneNumber, p.dateOfBirth, p.bloodType
+        FROM patients p JOIN users u ON p.userId = u.userId
+        WHERE u.role = 'patient' AND (u.firstName LIKE ? OR u.lastName LIKE ? OR u.email LIKE ? OR u.phoneNumber LIKE ?)
+        ORDER BY u.firstName LIMIT 20
     ");
     $searchLike = "%$searchTerm%";
     $stmt->execute([$searchLike, $searchLike, $searchLike, $searchLike]);
     $searchResults = $stmt->fetchAll();
 }
 
+// Get selected patient details
+if ($patientId) {
+    $stmt = $pdo->prepare("
+        SELECT p.patientId, u.userId, u.firstName, u.lastName, u.email, u.phoneNumber,
+               p.dateOfBirth, p.bloodType, p.address, p.knownAllergies
+        FROM patients p JOIN users u ON p.userId = u.userId 
+        WHERE p.patientId = ? AND u.role = 'patient'
+    ");
+    $stmt->execute([$patientId]);
+    $selectedPatient = $stmt->fetch();
+}
+
 // Handle appointment booking
 $bookingError = null;
-$alternativeSlots = [];
+$bookingSuccess = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_appointment'])) {
-    $doctorId = $_POST['doctor_id'];
-    $patientId = $_POST['patient_id'];
+    $doctorId = (int)$_POST['doctor_id'];
+    $patientId = (int)$_POST['patient_id'];
     $date = $_POST['appointment_date'];
     $time = $_POST['appointment_time'];
-    $dateTime = $date . ' ' . $time;
-    $reason = sanitizeInput($_POST['reason']);
+    $reason = sanitizeInput($_POST['reason'] ?? '');
     
-    if (empty($time)) {
-        $bookingError = "Please select a time slot for the appointment.";
+    if (!$doctorId || !$date || !$time) {
+        $bookingError = "All fields are required.";
     } elseif (empty($patientId)) {
         $bookingError = "Please select a patient first.";
     } else {
-        // Check availability
-        $availability = suggestAlternativeSlots($doctorId, $dateTime);
+        if (strlen($time) === 5 && strpos($time, ':') === 2) {
+            $time .= ':00';
+        }
+        $dateTime = date('Y-m-d H:i:s', strtotime("$date $time"));
         
-        if ($availability['available']) {
+        if ($dateTime < date('Y-m-d H:i:s')) {
+            $bookingError = "Cannot book appointments in the past.";
+        } else {
             try {
                 $pdo->beginTransaction();
                 
-                $stmt = $pdo->prepare("INSERT INTO appointments (patientId, doctorId, dateTime, reason, status) VALUES (?, ?, ?, ?, 'scheduled')");
-                $stmt->execute([$patientId, $doctorId, $dateTime, $reason]);
+                $checkStmt = $pdo->prepare("
+                    SELECT COUNT(*) FROM appointments 
+                    WHERE doctorId = ? AND dateTime = ? 
+                    AND status NOT IN ('cancelled', 'no-show')
+                ");
+                $checkStmt->execute([$doctorId, $dateTime]);
+                if ($checkStmt->fetchColumn() > 0) {
+                    throw new Exception("This time slot is already booked.");
+                }
                 
+                $availStmt = $pdo->prepare("
+                    SELECT isAvailable, isDayOff, startTime, endTime
+                    FROM doctor_availability 
+                    WHERE doctorId = ? AND availabilityDate = ?
+                ");
+                $availStmt->execute([$doctorId, $date]);
+                $availability = $availStmt->fetch();
+                
+                if (!$availability) {
+                    $dayOfWeek = date('w', strtotime($date));
+                    if ($dayOfWeek >= 1 && $dayOfWeek <= 5) {
+                        $availability = [
+                            'startTime' => WORKING_HOURS_START . ':00',
+                            'endTime' => WORKING_HOURS_END . ':00',
+                            'isAvailable' => 1,
+                            'isDayOff' => 0
+                        ];
+                    } else {
+                        throw new Exception("Doctor is not available on weekends.");
+                    }
+                }
+                
+                if ($availability['isDayOff'] || !$availability['isAvailable']) {
+                    throw new Exception("Doctor is not available on this date.");
+                }
+                
+                $bookingTime = date('H:i:s', strtotime($time));
+                if ($bookingTime < $availability['startTime'] || $bookingTime > $availability['endTime']) {
+                    throw new Exception("Selected time is outside doctor's working hours.");
+                }
+                
+                $stmt = $pdo->prepare("
+                    INSERT INTO appointments (patientId, doctorId, dateTime, duration, reason, status, createdAt) 
+                    VALUES (?, ?, ?, 30, ?, 'scheduled', NOW())
+                ");
+                $stmt->execute([$patientId, $doctorId, $dateTime, $reason]);
                 $appointmentId = $pdo->lastInsertId();
                 
-                // Get patient details for notification
+                // ========== GET PATIENT DETAILS ==========
                 $patientStmt = $pdo->prepare("
-                    SELECT u.email, u.firstName, u.lastName, u.userId
-                    FROM patients p
-                    JOIN users u ON p.userId = u.userId
-                    WHERE p.patientId = ?
+                    SELECT u.userId, u.firstName, u.lastName, u.email, u.phoneNumber 
+                    FROM patients p JOIN users u ON p.userId = u.userId WHERE p.patientId = ?
                 ");
                 $patientStmt->execute([$patientId]);
-                $patient = $patientStmt->fetch();
+                $patientInfo = $patientStmt->fetch();
                 
-                // Create notification for patient
-                createNotification(
-                    $patient['userId'],
-                    'appointment',
-                    'Appointment Booked',
-                    "Your appointment has been booked for " . date('M j, Y g:i A', strtotime($dateTime)) . " by reception."
-                );
-                
-                // Create notification for doctor
+                // ========== GET DOCTOR DETAILS ==========
                 $doctorStmt = $pdo->prepare("
-                    SELECT s.userId, u.firstName, u.lastName 
+                    SELECT s.userId as doctorUserId, u.email as doctorEmail, 
+                           CONCAT(u.firstName, ' ', u.lastName) as doctorName,
+                           d.specialization
                     FROM doctors d 
                     JOIN staff s ON d.staffId = s.staffId 
-                    JOIN users u ON s.userId = u.userId 
+                    JOIN users u ON s.userId = u.userId
                     WHERE d.doctorId = ?
                 ");
                 $doctorStmt->execute([$doctorId]);
-                $doctor = $doctorStmt->fetch();
+                $doctorInfo = $doctorStmt->fetch();
                 
-                createNotification(
-                    $doctor['userId'],
-                    'appointment',
-                    'New Appointment Booked',
-                    "A new appointment has been booked for " . date('M j, Y g:i A', strtotime($dateTime)) . " with patient: " . $patient['firstName'] . " " . $patient['lastName']
-                );
+                $formattedDateTime = date('l, F j, Y \a\t g:i A', strtotime($dateTime));
+                
+                // ========== SEND EMAIL TO PATIENT ==========
+                if ($patientInfo && !empty($patientInfo['email'])) {
+                    $patientSubject = "Appointment Confirmation - " . SITE_NAME;
+                    $patientMessage = "
+                        <!DOCTYPE html>
+                        <html>
+                        <head><style>body{font-family:Arial}.container{max-width:600px;margin:0 auto;padding:20px}.header{background:#f59e0b;color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0}.content{background:#f9f9f9;padding:30px;border-radius:0 0 10px 10px}</style></head>
+                        <body><div class='container'><div class='header'><h2>✓ Appointment Confirmed</h2></div>
+                        <div class='content'><p>Dear <strong>{$patientInfo['firstName']} {$patientInfo['lastName']}</strong>,</p>
+                        <p>Your appointment has been booked by our reception staff.</p>
+                        <p><strong>Doctor:</strong> Dr. {$doctorInfo['doctorName']} ({$doctorInfo['specialization']})</p>
+                        <p><strong>Date & Time:</strong> {$formattedDateTime}</p>
+                        <p><strong>Reason:</strong> " . ($reason ?: 'General Consultation') . "</p>
+                        <p>Please arrive 15 minutes before your appointment time.</p></div></div></body></html>
+                    ";
+                    sendEmail($patientInfo['email'], $patientSubject, $patientMessage);
+                }
+                
+                // ========== SEND EMAIL TO DOCTOR ==========
+                if ($doctorInfo && !empty($doctorInfo['doctorEmail'])) {
+                    $doctorSubject = "New Appointment Booked by Reception - " . SITE_NAME;
+                    $doctorMessage = "
+                        <!DOCTYPE html>
+                        <html>
+                        <head><style>body{font-family:Arial}.container{max-width:600px;margin:0 auto;padding:20px}.header{background:#2563eb;color:white;padding:30px;text-align:center;border-radius:10px 10px 0 0}.content{background:#f9f9f9;padding:30px;border-radius:0 0 10px 10px}</style></head>
+                        <body><div class='container'><div class='header'><h2>📅 New Appointment Booked</h2></div>
+                        <div class='content'><p>Dear Dr. <strong>{$doctorInfo['doctorName']}</strong>,</p>
+                        <p>A new appointment has been booked by reception.</p>
+                        <p><strong>Patient:</strong> {$patientInfo['firstName']} {$patientInfo['lastName']}</p>
+                        <p><strong>Date & Time:</strong> {$formattedDateTime}</p>
+                        <p><strong>Reason:</strong> " . ($reason ?: 'General Consultation') . "</p>
+                        <p><strong>Contact:</strong> {$patientInfo['phoneNumber']} | {$patientInfo['email']}</p></div></div></body></html>
+                    ";
+                    sendEmail($doctorInfo['doctorEmail'], $doctorSubject, $doctorMessage);
+                }
+                
+                // ========== CREATE NOTIFICATION FOR PATIENT ==========
+createNotification(
+    $patientInfo['userId'],
+    'appointment',
+    'Appointment Booked by Reception',
+    "Your appointment with Dr. {$doctorInfo['doctorName']} has been booked for {$formattedDateTime}.",
+    "patient/view-appointments.php"
+);
+
+// ========== CREATE NOTIFICATION FOR DOCTOR ==========
+if ($doctorInfo && $doctorInfo['doctorUserId']) {
+    createNotification(
+        $doctorInfo['doctorUserId'],
+        'appointment',
+        'New Appointment Booked by Reception',
+        "New appointment with patient {$patientInfo['firstName']} {$patientInfo['lastName']} on {$formattedDateTime}.",
+        "doctor/appointments.php?date=" . date('Y-m-d', strtotime($dateTime))
+    );
+}
                 
                 $pdo->commit();
-                
-                $_SESSION['success'] = "Appointment booked successfully for " . $patient['firstName'] . " " . $patient['lastName'] . "!";
-                logAction($userId, 'APPOINTMENT_BOOK', "Booked appointment for patient ID: $patientId with doctor ID: $doctorId");
-                
-                header("Location: book-appointment.php");
-                exit();
+                $bookingSuccess = true;
+                $_SESSION['success'] = "Appointment booked successfully!";
+                logAction($userId, 'APPOINTMENT_BOOK', "Staff booked appointment for patient ID: $patientId with doctor ID: $doctorId");
                 
             } catch (Exception $e) {
                 $pdo->rollBack();
-                $bookingError = "Failed to book appointment. Please try again.";
+                $bookingError = $e->getMessage();
+                error_log("Staff appointment booking error: " . $e->getMessage());
             }
-        } else {
-            $bookingError = "The selected time slot is not available.";
-            $alternativeSlots = $availability['alternatives'];
         }
     }
 }
@@ -145,228 +223,430 @@ $doctors = $pdo->query("
     WHERE d.isAvailable = 1
     ORDER BY u.firstName, u.lastName
 ")->fetchAll();
+
+// Get recent patients
+$recentPatients = $pdo->query("
+    SELECT DISTINCT p.patientId, u.firstName, u.lastName, u.email, u.phoneNumber,
+           (SELECT MAX(dateTime) FROM appointments WHERE patientId = p.patientId) as last_visit
+    FROM patients p
+    JOIN users u ON p.userId = u.userId
+    WHERE u.role = 'patient'
+    ORDER BY last_visit DESC, u.firstName ASC
+    LIMIT 10
+")->fetchAll();
+
+$success = $_SESSION['success'] ?? null;
+$error = $_SESSION['error'] ?? null;
+unset($_SESSION['success'], $_SESSION['error']);
 ?>
 
-<div class="dashboard">
-    <div class="dashboard-header">
-        <h1>Book Appointment for Patient</h1>
-        <p>Search for a patient and book an appointment on their behalf</p>
+<div class="staff-container">
+    <div class="staff-page-header">
+        <div class="header-title">
+            <h1><i class="fas fa-calendar-plus"></i> Book Appointment</h1>
+            <p>Search for a patient and book an appointment on their behalf</p>
+        </div>
+        <div class="header-actions">
+            <a href="dashboard.php" class="staff-btn staff-btn-outline">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
     </div>
 
+    <?php if ($error): ?>
+        <div class="staff-alert staff-alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="staff-alert staff-alert-success">
+            <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+        </div>
+    <?php endif; ?>
+    
     <?php if ($bookingError): ?>
-        <div class="alert alert-error"><?php echo $bookingError; ?></div>
+        <div class="staff-alert staff-alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($bookingError); ?>
+        </div>
     <?php endif; ?>
 
-    <?php if (!empty($alternativeSlots)): ?>
-        <div class="alternative-slots">
-            <h4>Suggested Alternative Times:</h4>
-            <div class="alternative-list">
-                <?php foreach ($alternativeSlots as $alt): ?>
-                    <div class="alternative-item" data-date="<?php echo $alt['date']; ?>" data-time="<?php echo $alt['time_value']; ?>">
-                        <?php echo $alt['date_formatted']; ?> at <?php echo $alt['time']; ?>
-                    </div>
-                <?php endforeach; ?>
+    <?php if ($bookingSuccess): ?>
+        <div class="staff-alert staff-alert-success">
+            <i class="fas fa-check-circle"></i> 
+            Appointment booked successfully! 
+            <a href="dashboard.php" class="staff-btn staff-btn-primary staff-btn-sm" style="margin-left: auto;">Return to Dashboard</a>
+        </div>
+    <?php endif; ?>
+
+    <!-- Step 1: Find Patient -->
+    <?php if (!$selectedPatient && !$bookingSuccess): ?>
+        <div class="staff-card">
+            <div class="staff-card-header">
+                <h3><i class="fas fa-search"></i> Step 1: Find Patient</h3>
             </div>
-        </div>
-    <?php endif; ?>
+            <div class="staff-card-body">
+                <form method="GET" class="staff-search-group">
+                    <input type="text" name="search" placeholder="Search by name, email, or phone..." 
+                           value="<?php echo htmlspecialchars($searchTerm); ?>" class="staff-search-input">
+                    <button type="submit" class="staff-btn staff-btn-primary">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                    <?php if ($searchTerm || $patientId): ?>
+                        <a href="book-appointment.php" class="staff-btn staff-btn-outline">Clear</a>
+                    <?php endif; ?>
+                </form>
 
-    <!-- Patient Search -->
-    <div class="card">
-        <div class="card-header">
-            <h3><i class="fas fa-search"></i> Step 1: Find Patient</h3>
-        </div>
-        <div class="card-body">
-            <form method="GET" action="" class="search-form">
-                <div class="search-group">
-                    <input type="text" name="search" placeholder="Search by name, email, or phone..." value="<?php echo htmlspecialchars($searchTerm); ?>">
-                    <button type="submit" class="btn btn-primary">Search</button>
-                </div>
-            </form>
-
-            <?php if ($searchTerm): ?>
-                <div class="search-results">
-                    <h4>Search Results (<?php echo count($searchResults); ?> found)</h4>
-                    <?php if (empty($searchResults)): ?>
-                        <p class="text-muted">No patients found. <a href="../staff/register-patient.php">Register a new patient</a></p>
-                    <?php else: ?>
-                        <div class="patient-list">
-                            <?php foreach ($searchResults as $patient): ?>
-                                <div class="patient-item">
-                                    <div class="patient-info">
-                                        <strong><?php echo htmlspecialchars($patient['firstName'] . ' ' . $patient['lastName']); ?></strong><br>
-                                        <small><?php echo $patient['email']; ?> | <?php echo $patient['phoneNumber']; ?></small>
+                <?php if ($searchTerm): ?>
+                    <div class="staff-search-results">
+                        <h4>Search Results (<?php echo count($searchResults); ?> found)</h4>
+                        <?php if (empty($searchResults)): ?>
+                            <p class="staff-text-muted">No patients found. <a href="register-patient.php">Register a new patient</a></p>
+                        <?php else: ?>
+                            <div class="staff-patient-list">
+                                <?php foreach ($searchResults as $patient): ?>
+                                    <div class="staff-patient-item">
+                                        <div class="staff-patient-info">
+                                            <strong><?php echo htmlspecialchars($patient['firstName'] . ' ' . $patient['lastName']); ?></strong>
+                                            <small><?php echo htmlspecialchars($patient['email']); ?> | <?php echo htmlspecialchars($patient['phoneNumber']); ?></small>
+                                        </div>
+                                        <a href="?patient_id=<?php echo $patient['patientId']; ?>" class="staff-btn staff-btn-primary staff-btn-sm">
+                                            Select Patient
+                                        </a>
                                     </div>
-                                    <a href="?patient_id=<?php echo $patient['patientId']; ?>" class="btn btn-primary btn-sm">
-                                        Select Patient
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!$searchTerm && !$selectedPatient && !empty($recentPatients)): ?>
+                    <div class="staff-recent-patients">
+                        <h4><i class="fas fa-clock"></i> Recent Patients</h4>
+                        <div class="staff-patient-list">
+                            <?php foreach ($recentPatients as $recent): ?>
+                                <div class="staff-patient-item">
+                                    <div class="staff-patient-info">
+                                        <strong><?php echo htmlspecialchars($recent['firstName'] . ' ' . $recent['lastName']); ?></strong>
+                                        <small><?php echo htmlspecialchars($recent['email']); ?> | <?php echo htmlspecialchars($recent['phoneNumber']); ?></small>
+                                    </div>
+                                    <a href="?patient_id=<?php echo $recent['patientId']; ?>" class="staff-btn staff-btn-primary staff-btn-sm">
+                                        Select
                                     </a>
                                 </div>
                             <?php endforeach; ?>
                         </div>
-                    <?php endif; ?>
-                </div>
-            <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php endif; ?>
 
-            <?php if ($selectedPatient): ?>
-                <div class="selected-patient">
-                    <h4><i class="fas fa-user-check"></i> Selected Patient</h4>
-                    <div class="patient-info-card">
-                        <p><strong>Name:</strong> <?php echo htmlspecialchars($selectedPatient['firstName'] . ' ' . $selectedPatient['lastName']); ?></p>
-                        <p><strong>Email:</strong> <?php echo $selectedPatient['email']; ?></p>
-                        <p><strong>Phone:</strong> <?php echo $selectedPatient['phoneNumber']; ?></p>
-                        <p><strong>Date of Birth:</strong> <?php echo $selectedPatient['dateOfBirth'] ?: 'N/A'; ?></p>
-                        <p><strong>Blood Type:</strong> <?php echo $selectedPatient['bloodType'] ?: 'N/A'; ?></p>
-                        <a href="book-appointment.php" class="btn btn-outline btn-sm">Change Patient</a>
+    <!-- Step 2: Book Appointment -->
+    <?php if ($selectedPatient && !$bookingSuccess): ?>
+        <div class="staff-card">
+            <div class="staff-card-header">
+                <h3><i class="fas fa-calendar-plus"></i> Step 2: Book Appointment for <?php echo htmlspecialchars($selectedPatient['firstName'] . ' ' . $selectedPatient['lastName']); ?></h3>
+                <a href="book-appointment.php" class="staff-btn staff-btn-outline staff-btn-sm">Change Patient</a>
+            </div>
+            <div class="staff-card-body">
+                <div class="staff-selected-patient">
+                    <div class="staff-patient-info-card">
+                        <div class="staff-info-row"><strong>Name:</strong> <?php echo htmlspecialchars($selectedPatient['firstName'] . ' ' . $selectedPatient['lastName']); ?></div>
+                        <div class="staff-info-row"><strong>Email:</strong> <?php echo htmlspecialchars($selectedPatient['email']); ?></div>
+                        <div class="staff-info-row"><strong>Phone:</strong> <?php echo htmlspecialchars($selectedPatient['phoneNumber']); ?></div>
+                        <div class="staff-info-row"><strong>DOB:</strong> <?php echo $selectedPatient['dateOfBirth'] ? date('M j, Y', strtotime($selectedPatient['dateOfBirth'])) : 'N/A'; ?></div>
+                        <div class="staff-info-row"><strong>Blood Type:</strong> <?php echo $selectedPatient['bloodType'] ?: 'N/A'; ?></div>
+                        <div class="staff-info-row"><strong>Allergies:</strong> <?php echo htmlspecialchars($selectedPatient['knownAllergies'] ?: 'None'); ?></div>
                     </div>
                 </div>
-            <?php endif; ?>
-        </div>
-    </div>
 
-    <!-- Book Appointment Form -->
-    <?php if ($selectedPatient): ?>
-    <div class="card">
-        <div class="card-header">
-            <h3><i class="fas fa-calendar-plus"></i> Step 2: Book Appointment for <?php echo htmlspecialchars($selectedPatient['firstName'] . ' ' . $selectedPatient['lastName']); ?></h3>
-        </div>
-        <div class="card-body">
-            <form method="POST" action="" id="appointment-form">
-                <input type="hidden" name="patient_id" value="<?php echo $selectedPatient['patientId']; ?>">
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="doctor_id">Select Doctor *</label>
-                        <select id="doctor_id" name="doctor_id" required>
-                            <option value="">Choose a doctor</option>
-                            <?php foreach ($doctors as $doctor): ?>
-                                <option value="<?php echo $doctor['doctorId']; ?>">
-                                    Dr. <?php echo $doctor['firstName'] . ' ' . $doctor['lastName']; ?> 
-                                    - <?php echo $doctor['specialization']; ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                <form method="POST" id="appointment-form" style="margin-top: 25px;">
+                    <input type="hidden" name="book_appointment" value="1">
+                    <input type="hidden" name="patient_id" value="<?php echo $selectedPatient['patientId']; ?>">
+                    
+                    <div class="staff-form-row">
+                        <div class="staff-form-group">
+                            <label for="doctor_id">Select Doctor <span class="required">*</span></label>
+                            <select id="doctor_id" name="doctor_id" class="staff-form-control" required>
+                                <option value="">Choose a doctor</option>
+                                <?php foreach ($doctors as $doctor): ?>
+                                    <option value="<?php echo $doctor['doctorId']; ?>">
+                                        Dr. <?php echo htmlspecialchars($doctor['firstName'] . ' ' . $doctor['lastName']); ?> 
+                                        - <?php echo htmlspecialchars($doctor['specialization']); ?>
+                                        ($<?php echo number_format($doctor['consultationFee'], 2); ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="staff-form-group">
+                            <label for="appointment_date">Date <span class="required">*</span></label>
+                            <input type="date" id="appointment_date" name="appointment_date" 
+                                   min="<?php echo date('Y-m-d'); ?>" 
+                                   max="<?php echo date('Y-m-d', strtotime('+60 days')); ?>"
+                                   class="staff-form-control" required>
+                        </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="appointment_date">Date *</label>
-                        <input type="date" id="appointment_date" name="appointment_date" 
-                               min="<?php echo date('Y-m-d'); ?>" 
-                               max="<?php echo date('Y-m-d', strtotime('+30 days')); ?>"
-                               required>
+                    <!-- Closest Appointment Info -->
+                    <div id="closest-appointment-info" class="closest-appointment-info" style="display: none;">
+                        <div class="closest-badge">
+                            <i class="fas fa-star"></i> Earliest Available Appointment
+                        </div>
+                        <p id="closest-appointment-text">
+                            <i class="fas fa-spinner fa-spin"></i> Checking availability...
+                        </p>
+                        <button type="button" id="use-closest-appointment" class="staff-btn staff-btn-outline staff-btn-sm" style="display: none;">
+                            <i class="fas fa-calendar-check"></i> Use This Time
+                        </button>
                     </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Select Time *</label>
-                    <div id="time-slots-container" class="time-slots-container">
-                        <p class="text-muted">Please select a doctor and date first</p>
+                    
+                    <div class="staff-form-group">
+                        <label>Select Time <span class="required">*</span></label>
+                        <div id="time-slots-container" class="staff-time-slots-container">
+                            <p class="staff-text-muted">Please select a doctor and date first</p>
+                        </div>
+                        <input type="hidden" id="appointment_time" name="appointment_time">
                     </div>
-                    <input type="hidden" id="appointment_time" name="appointment_time">
-                </div>
-                
-                <div class="form-group">
-                    <label for="reason">Reason for Visit</label>
-                    <textarea id="reason" name="reason" rows="3" placeholder="Briefly describe the reason for visit"></textarea>
-                </div>
-                
-                <div id="availability-result"></div>
-                
-                <button type="submit" name="book_appointment" class="btn btn-primary">
-                    <i class="fas fa-check"></i> Book Appointment
-                </button>
-            </form>
+                    
+                    <div class="staff-form-group">
+                        <label for="reason">Reason for Visit</label>
+                        <textarea id="reason" name="reason" rows="3" class="staff-form-control" 
+                                  placeholder="Briefly describe the reason for visit"></textarea>
+                    </div>
+                    
+                    <button type="submit" name="submit_booking" class="staff-btn staff-btn-primary">
+                        <i class="fas fa-check"></i> Book Appointment
+                    </button>
+                </form>
+            </div>
         </div>
-    </div>
     <?php endif; ?>
 </div>
+
+<style>
+.closest-appointment-info {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 2px solid #fcd34d;
+    border-radius: 16px;
+    padding: 18px 22px;
+    margin-bottom: 25px;
+}
+.closest-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #f59e0b;
+    color: white;
+    padding: 6px 18px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.closest-appointment-info p {
+    margin: 0 0 18px 0;
+    color: #92400e;
+    font-size: 16px;
+    font-weight: 500;
+}
+#use-closest-appointment {
+    background: white;
+    border: 2px solid #f59e0b;
+    color: #f59e0b;
+    font-weight: 600;
+}
+#use-closest-appointment:hover {
+    background: #f59e0b;
+    color: white;
+}
+.staff-time-slots-container {
+    min-height: 100px;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 2px dashed #cbd5e1;
+}
+.staff-time-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 12px;
+}
+.staff-time-slot {
+    padding: 12px 8px;
+    background: white;
+    border: 2px solid #cbd5e1;
+    border-radius: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 15px;
+    font-weight: 600;
+    color: #334155;
+}
+.staff-time-slot:hover {
+    background: #f59e0b;
+    color: white;
+    border-color: #f59e0b;
+    transform: scale(1.05);
+}
+.staff-time-slot.selected {
+    background: #f59e0b;
+    color: white;
+    border-color: #f59e0b;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+.staff-text-muted {
+    color: #64748b;
+    text-align: center;
+    padding: 20px;
+}
+</style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const doctorSelect = document.getElementById('doctor_id');
     const dateInput = document.getElementById('appointment_date');
-    const timeSlotsContainer = document.getElementById('time-slots-container');
     const timeInput = document.getElementById('appointment_time');
-    const availabilityResult = document.getElementById('availability-result');
+    const timeSlotsContainer = document.getElementById('time-slots-container');
+    const closestInfo = document.getElementById('closest-appointment-info');
+    const closestText = document.getElementById('closest-appointment-text');
+    const useClosestBtn = document.getElementById('use-closest-appointment');
     
-    if (!doctorSelect || !dateInput) return;
+    let closestSlot = null;
     
-    function loadTimeSlots() {
-        const doctorId = doctorSelect.value;
-        const date = dateInput.value;
-        
+    if (dateInput && !dateInput.value) {
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.value = today;
+    }
+    
+    async function findClosestAppointment(doctorId) {
+        if (!doctorId) return null;
+        try {
+            const response = await fetch(`../ajax/get-closest-appointment.php?doctor_id=${doctorId}`);
+            const text = await response.text();
+            try {
+                const data = JSON.parse(text);
+                if (data.success && data.closest) return data.closest;
+            } catch (e) {}
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+    
+    async function loadTimeSlots(doctorId, date) {
         if (!doctorId || !date) {
-            timeSlotsContainer.innerHTML = '<p class="text-muted">Please select a doctor and date first</p>';
+            timeSlotsContainer.innerHTML = '<p class="staff-text-muted">Please select a doctor and date first</p>';
             return;
         }
         
-        timeSlotsContainer.innerHTML = '<p class="text-muted">Loading available times...</p>';
+        timeSlotsContainer.innerHTML = '<p class="staff-text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</p>';
         
-        fetch(`../ajax/get-time-slots.php?doctor_id=${doctorId}&date=${date}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.slots && data.slots.length > 0) {
-                    let html = '<div class="time-slots">';
-                    data.slots.forEach(slot => {
-                        html += `<div class="time-slot" data-time="${slot.value}">${slot.start}</div>`;
+        try {
+            const response = await fetch(`../ajax/get-time-slots.php?doctor_id=${doctorId}&date=${date}`);
+            const text = await response.text();
+            const data = JSON.parse(text);
+            
+            if (data.success && data.slots && data.slots.length > 0) {
+                let html = '<div class="staff-time-slots">';
+                data.slots.forEach(slot => {
+                    html += `<div class="staff-time-slot" data-time="${slot.value}">${slot.display}</div>`;
+                });
+                html += '</div>';
+                timeSlotsContainer.innerHTML = html;
+                
+                document.querySelectorAll('.staff-time-slot').forEach(slot => {
+                    slot.addEventListener('click', function() {
+                        document.querySelectorAll('.staff-time-slot').forEach(s => s.classList.remove('selected'));
+                        this.classList.add('selected');
+                        if (timeInput) timeInput.value = this.getAttribute('data-time');
                     });
-                    html += '</div>';
-                    timeSlotsContainer.innerHTML = html;
-                    
-                    document.querySelectorAll('.time-slot').forEach(slot => {
-                        slot.addEventListener('click', function() {
-                            document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
-                            this.classList.add('selected');
-                            timeInput.value = this.getAttribute('data-time');
-                            
-                            if (availabilityResult) {
-                                availabilityResult.innerHTML = '';
-                            }
-                        });
-                    });
-                } else {
-                    timeSlotsContainer.innerHTML = '<p class="text-muted">No available time slots for this date</p>';
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                timeSlotsContainer.innerHTML = '<p class="text-muted">Error loading time slots. Please try again.</p>';
-            });
+                });
+            } else {
+                timeSlotsContainer.innerHTML = '<p class="staff-text-muted">No available time slots for this date.</p>';
+                if (timeInput) timeInput.value = '';
+            }
+        } catch (error) {
+            timeSlotsContainer.innerHTML = '<p class="staff-text-muted">Error loading time slots.</p>';
+        }
     }
     
-    doctorSelect.addEventListener('change', loadTimeSlots);
-    dateInput.addEventListener('change', loadTimeSlots);
+   async function updateClosestAppointment() {
+    const doctorId = doctorSelect?.value;
+    if (!doctorId) {
+        closestInfo.style.display = 'none';
+        return;
+    }
     
-    // Alternative item click handler
-    document.querySelectorAll('.alternative-item').forEach(item => {
-        item.addEventListener('click', function() {
-            const altDate = this.getAttribute('data-date');
-            const altTime = this.getAttribute('data-time');
-            if (dateInput) dateInput.value = altDate;
-            if (timeInput) timeInput.value = altTime;
-            loadTimeSlots();
-            
-            setTimeout(() => {
-                document.querySelectorAll('.time-slot').forEach(slot => {
-                    if (slot.getAttribute('data-time') === altTime) {
-                        slot.classList.add('selected');
-                    }
-                });
-            }, 100);
-            
-            if (availabilityResult) {
-                availabilityResult.innerHTML = '<div class="alert alert-success">Alternative time selected! You can now book this appointment.</div>';
+    closestInfo.style.display = 'block';
+    closestText.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Finding earliest available appointment...';
+    useClosestBtn.style.display = 'none';
+    
+    closestSlot = await findClosestAppointment(doctorId);
+    
+    if (closestSlot) {
+        const dateObj = new Date(closestSlot.date + 'T' + closestSlot.time);
+        const formattedDate = dateObj.toLocaleDateString('en-US', { 
+            weekday: 'short', 
+            month: 'short', 
+            day: 'numeric',
+            year: 'numeric'
+        });
+        closestText.innerHTML = `<i class="fas fa-calendar-check"></i> <strong>${formattedDate}</strong> at <strong>${closestSlot.display_time}</strong>`;
+        useClosestBtn.style.display = 'inline-block';
+    } else {
+        // Show a more helpful message
+        closestText.innerHTML = '<i class="fas fa-calendar-times"></i> No available appointments found. The doctor may not have set their availability schedule.';
+    }
+}
+    
+    if (useClosestBtn) {
+        useClosestBtn.addEventListener('click', function() {
+            if (closestSlot) {
+                dateInput.value = closestSlot.date;
+                timeInput.value = closestSlot.time;
+                loadTimeSlots(doctorSelect.value, closestSlot.date);
+                setTimeout(() => {
+                    document.querySelectorAll('.staff-time-slot').forEach(slot => {
+                        if (slot.getAttribute('data-time') === closestSlot.time) {
+                            slot.classList.add('selected');
+                        }
+                    });
+                }, 500);
             }
         });
-    });
+    }
     
-    // Form submission validation
+    if (doctorSelect) {
+        doctorSelect.addEventListener('change', function() {
+            if (timeInput) timeInput.value = '';
+            if (this.value && dateInput.value) loadTimeSlots(this.value, dateInput.value);
+            updateClosestAppointment();
+        });
+    }
+    
+    if (dateInput) {
+        dateInput.addEventListener('change', function() {
+            if (timeInput) timeInput.value = '';
+            if (doctorSelect.value && this.value) loadTimeSlots(doctorSelect.value, this.value);
+        });
+    }
+    
+    if (doctorSelect?.value) {
+        updateClosestAppointment();
+    }
+    
     const form = document.getElementById('appointment-form');
     if (form) {
         form.addEventListener('submit', function(e) {
-            if (!timeInput.value) {
+            if (!timeInput || !timeInput.value) {
                 e.preventDefault();
                 alert('Please select a time slot for the appointment.');
                 return false;
             }
+            return confirm('Confirm this appointment booking?');
         });
     }
 });

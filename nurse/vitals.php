@@ -1,42 +1,38 @@
 <?php
-require_once '..\/includes\/config.php';
-require_once '..\/includes\/auth.php';
+require_once '../includes/config.php';
+require_once '../includes/auth.php';
 checkRole('nurse');
 
 $pageTitle = "Patient Vitals - HealthManagement";
-include '..\/includes\/header.php';
+$extraCSS = '<link rel="stylesheet" href="../css/nurse.css">';
+include '../includes/header.php';
 
-$userId = $_SESSION['user_id'];
 $recordId = $_GET['record_id'] ?? 0;
 $patientId = $_GET['patient_id'] ?? 0;
 
-// Get vitals records
 $query = "
     SELECT v.*, 
-           CONCAT(u.firstName, ' ', u.lastName) as patientName,
-           CONCAT(du.firstName, ' ', du.lastName) as recordedByName,
+           CONCAT(u.firstName, ' ', u.lastName) as patientName, 
+           CONCAT(du.firstName, ' ', du.lastName) as recordedByName, 
            mr.diagnosis
-    FROM vitals v
-    JOIN medical_records mr ON v.recordId = mr.recordId
-    JOIN patients p ON mr.patientId = p.patientId
+    FROM vitals v 
+    JOIN medical_records mr ON v.recordId = mr.recordId 
+    JOIN patients p ON mr.patientId = p.patientId 
     JOIN users u ON p.userId = u.userId
-    LEFT JOIN staff s ON v.recordedBy = s.staffId
-    LEFT JOIN users du ON s.userId = du.userId
+    LEFT JOIN staff s ON v.recordedBy = s.staffId 
+    LEFT JOIN users du ON s.userId = du.userId 
     WHERE 1=1
 ";
-
 $params = [];
 
 if ($recordId) {
     $query .= " AND v.recordId = ?";
     $params[] = $recordId;
 }
-
 if ($patientId) {
     $query .= " AND p.patientId = ?";
     $params[] = $patientId;
 }
-
 $query .= " ORDER BY v.recordedDate DESC";
 
 $stmt = $pdo->prepare($query);
@@ -44,61 +40,51 @@ $stmt->execute($params);
 $vitals = $stmt->fetchAll();
 ?>
 
-<div class="dashboard">
-    <div class="dashboard-header">
-        <h1>Patient Vitals</h1>
-        <p>View and track patient vital signs</p>
+<div class="nurse-container">
+    <div class="nurse-page-header">
+        <div class="header-title">
+            <h1><i class="fas fa-heartbeat"></i> Patient Vitals</h1>
+            <p>View vital signs records</p>
+        </div>
     </div>
 
-    <!-- Vitals List -->
-    <div class="card">
-        <div class="card-header">
-            <h3>Vitals Records (<?php echo count($vitals); ?> found)</h3>
+    <div class="nurse-card">
+        <div class="nurse-card-header">
+            <h3><i class="fas fa-list"></i> Vitals Records (<?php echo count($vitals); ?>)</h3>
         </div>
-        <div class="table-container">
-            <table class="data-table">
+        <div class="nurse-table-responsive">
+            <table class="nurse-data-table">
                 <thead>
                     <tr>
-                        <th>Date & Time</th>
+                        <th>Date</th>
                         <th>Patient</th>
                         <th>BP</th>
-                        <th>Heart Rate</th>
-                        <th>Temperature</th>
+                        <th>HR</th>
+                        <th>Temp</th>
                         <th>Weight</th>
-                        <th>Height</th>
                         <th>SpO2</th>
                         <th>Recorded By</th>
                         <th>Actions</th>
-                    </thead>
+                    </tr>
+                </thead>
                 <tbody>
-                    <?php if (empty($vitals)): ?>
-                    
-                            <td colspan="10" style="text-align: center;">No vitals records found</td>
+                    <?php foreach ($vitals as $v): ?>
+                        <tr>
+                            <td data-label="Date"><?php echo date('M j, Y g:i A', strtotime($v['recordedDate'])); ?></td>
+                            <td data-label="Patient"><?php echo htmlspecialchars($v['patientName']); ?></td>
+                            <td data-label="BP"><?php echo $v['bloodPressureSystolic'] ? $v['bloodPressureSystolic'].'/'.$v['bloodPressureDiastolic'] : '-'; ?></td>
+                            <td data-label="HR"><?php echo $v['heartRate'] ?: '-'; ?> bpm</td>
+                            <td data-label="Temp"><?php echo $v['bodyTemperature'] ?: '-'; ?> °C</td>
+                            <td data-label="Weight"><?php echo $v['weight'] ?: '-'; ?> kg</td>
+                            <td data-label="SpO2"><?php echo $v['oxygenSaturation'] ?: '-'; ?>%</td>
+                            <td data-label="Recorded By"><?php echo $v['recordedByName'] ?: 'Nurse'; ?></td>
+                            <td data-label="Actions">
+                                <button class="nurse-btn nurse-btn-primary nurse-btn-sm" onclick="viewDetails(<?php echo $v['vitalsId']; ?>)">
+                                    <i class="fas fa-eye"></i> View
+                                </button>
+                            </td>
                         </tr>
-                    <?php else: ?>
-                        <?php foreach ($vitals as $vital): ?>
-                        
-                                <td data-label="Date & Time"><?php echo date('M j, Y g:i A', strtotime($vital['recordedDate'])); ?></td>
-                                <td data-label="Patient">
-                                    <strong><?php echo htmlspecialchars($vital['patientName']); ?></strong>
-                                </td>
-                                <td data-label="BP">
-                                    <?php echo $vital['bloodPressureSystolic'] ? $vital['bloodPressureSystolic'] . '\/' . $vital['bloodPressureDiastolic'] : '-'; ?>
-                                </td>
-                                <td data-label="Heart Rate"><?php echo $vital['heartRate'] ?: '-'; ?> bpm</td>
-                                <td data-label="Temperature"><?php echo $vital['bodyTemperature'] ?: '-'; ?> °C</td>
-                                <td data-label="Weight"><?php echo $vital['weight'] ?: '-'; ?> kg<td>
-                                <td data-label="Height"><?php echo $vital['height'] ?: '-'; ?> cm</td>
-                                <td data-label="SpO2"><?php echo $vital['oxygenSaturation'] ?: '-'; ?>%</td>
-                                <td data-label="Recorded By"><?php echo $vital['recordedByName'] ?: 'Nurse'; ?></td>
-                                <td data-label="Actions">
-                                    <button class="btn btn-primary btn-sm" onclick="viewVitalsDetails(<?php echo $vital['vitalsId']; ?>)">
-                                        <i class="fas fa-eye"></i> View Details
-                                    </button>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
@@ -106,9 +92,9 @@ $vitals = $stmt->fetchAll();
 </div>
 
 <script>
-function viewVitalsDetails(vitalsId) {
-    window.location.href = `vitals-details.php?id=${vitalsId}`;
+function viewDetails(id) {
+    window.location.href = `vitals-details.php?id=${id}`;
 }
-<\/script>
+</script>
 
-<?php include '..\/includes\/footer.php'; ?>
+<?php include '../includes/footer.php'; ?>

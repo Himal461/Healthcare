@@ -4,12 +4,48 @@ require_once '../includes/auth.php';
 checkRole('staff');
 
 $pageTitle = "Patient Records - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="../css/staff.css">';
 include '../includes/header.php';
 
 $userId = $_SESSION['user_id'];
 $patientId = $_GET['patient_id'] ?? 0;
+$searchTerm = $_GET['search'] ?? '';
+$patient = null;
+$appointments = [];
+$bills = [];
+$medicalRecords = [];
+$prescriptions = [];
+$vitals = [];
+$searchResults = [];
 
-// Get patient details
+// Handle patient search - FIXED: Only search users with role = 'patient'
+if ($searchTerm) {
+    $stmt = $pdo->prepare("
+        SELECT p.patientId, u.firstName, u.lastName, u.email, u.phoneNumber, p.dateOfBirth, p.bloodType
+        FROM patients p
+        JOIN users u ON p.userId = u.userId
+        WHERE u.role = 'patient' 
+        AND (u.firstName LIKE ? OR u.lastName LIKE ? OR u.email LIKE ? OR u.phoneNumber LIKE ?)
+        ORDER BY u.firstName, u.lastName
+        LIMIT 50
+    ");
+    $searchLike = "%$searchTerm%";
+    $stmt->execute([$searchLike, $searchLike, $searchLike, $searchLike]);
+    $searchResults = $stmt->fetchAll();
+}
+
+// FIXED: Get recent patients - only actual patients, no GROUP BY issue
+$recentPatients = $pdo->query("
+    SELECT DISTINCT p.patientId, u.firstName, u.lastName, u.email, u.phoneNumber,
+           (SELECT MAX(dateTime) FROM appointments WHERE patientId = p.patientId) as last_visit
+    FROM patients p
+    JOIN users u ON p.userId = u.userId
+    WHERE u.role = 'patient'
+    ORDER BY last_visit DESC, u.firstName ASC
+    LIMIT 10
+")->fetchAll();
+
+// Get patient details if patient selected - FIXED: Verify patient role
 if ($patientId) {
     $stmt = $pdo->prepare("
         SELECT u.userId, u.firstName, u.lastName, u.email, u.phoneNumber, u.dateCreated,
@@ -17,371 +53,340 @@ if ($patientId) {
                p.emergencyContactName, p.emergencyContactPhone, p.insuranceProvider, p.insuranceNumber
         FROM patients p
         JOIN users u ON p.userId = u.userId
-        WHERE p.patientId = ?
+        WHERE p.patientId = ? AND u.role = 'patient'
     ");
     $stmt->execute([$patientId]);
     $patient = $stmt->fetch();
     
-    // Get patient appointments
-    $stmt = $pdo->prepare("
-        SELECT a.*, 
-               CONCAT(du.firstName, ' ', du.lastName) as doctorName,
-               d.specialization
-        FROM appointments a
-        JOIN doctors d ON a.doctorId = d.doctorId
-        JOIN staff s ON d.staffId = s.staffId
-        JOIN users du ON s.userId = du.userId
-        WHERE a.patientId = ?
-        ORDER BY a.dateTime DESC
-        LIMIT 20
-    ");
-    $stmt->execute([$patientId]);
-    $appointments = $stmt->fetchAll();
-    
-    // Get patient bills
-    $stmt = $pdo->prepare("
-        SELECT * FROM billing 
-        WHERE patientId = ?
-        ORDER BY createdAt DESC
-    ");
-    $stmt->execute([$patientId]);
-    $bills = $stmt->fetchAll();
-    
-    // Get patient medical records
-    $stmt = $pdo->prepare("
-        SELECT mr.*, 
-               CONCAT(du.firstName, ' ', du.lastName) as doctorName,
-               d.specialization
-        FROM medical_records mr
-        JOIN doctors d ON mr.doctorId = d.doctorId
-        JOIN staff s ON d.staffId = s.staffId
-        JOIN users du ON s.userId = du.userId
-        WHERE mr.patientId = ?
-        ORDER BY mr.creationDate DESC
-        LIMIT 10
-    ");
-    $stmt->execute([$patientId]);
-    $medicalRecords = $stmt->fetchAll();
-    
-    // Get patient prescriptions
-    $stmt = $pdo->prepare("
-        SELECT p.*, 
-               CONCAT(du.firstName, ' ', du.lastName) as doctorName,
-               mr.diagnosis
-        FROM prescriptions p
-        JOIN medical_records mr ON p.recordId = mr.recordId
-        JOIN doctors d ON p.prescribedBy = d.doctorId
-        JOIN staff s ON d.staffId = s.staffId
-        JOIN users du ON s.userId = du.userId
-        WHERE mr.patientId = ?
-        ORDER BY p.createdAt DESC
-    ");
-    $stmt->execute([$patientId]);
-    $prescriptions = $stmt->fetchAll();
-    
-    // Get patient vitals
-    $stmt = $pdo->prepare("
-        SELECT v.*, 
-               CONCAT(du.firstName, ' ', du.lastName) as recordedByName
-        FROM vitals v
-        JOIN medical_records mr ON v.recordId = mr.recordId
-        LEFT JOIN staff s ON v.recordedBy = s.staffId
-        LEFT JOIN users du ON s.userId = du.userId
-        WHERE mr.patientId = ?
-        ORDER BY v.recordedDate DESC
-        LIMIT 10
-    ");
-    $stmt->execute([$patientId]);
-    $vitals = $stmt->fetchAll();
+    if ($patient) {
+        // Get patient appointments
+        $stmt = $pdo->prepare("
+            SELECT a.*, 
+                   CONCAT(du.firstName, ' ', du.lastName) as doctorName,
+                   d.specialization
+            FROM appointments a
+            JOIN doctors d ON a.doctorId = d.doctorId
+            JOIN staff s ON d.staffId = s.staffId
+            JOIN users du ON s.userId = du.userId
+            WHERE a.patientId = ?
+            ORDER BY a.dateTime DESC
+            LIMIT 20
+        ");
+        $stmt->execute([$patientId]);
+        $appointments = $stmt->fetchAll();
+        
+        // Get patient bills
+        $stmt = $pdo->prepare("SELECT * FROM bills WHERE patientId = ? ORDER BY generatedAt DESC");
+        $stmt->execute([$patientId]);
+        $bills = $stmt->fetchAll();
+        
+        // Get patient medical records
+        $stmt = $pdo->prepare("
+            SELECT mr.*, 
+                   CONCAT(du.firstName, ' ', du.lastName) as doctorName,
+                   d.specialization
+            FROM medical_records mr
+            JOIN doctors d ON mr.doctorId = d.doctorId
+            JOIN staff s ON d.staffId = s.staffId
+            JOIN users du ON s.userId = du.userId
+            WHERE mr.patientId = ?
+            ORDER BY mr.creationDate DESC
+            LIMIT 10
+        ");
+        $stmt->execute([$patientId]);
+        $medicalRecords = $stmt->fetchAll();
+        
+        // Get patient prescriptions
+        $stmt = $pdo->prepare("
+            SELECT p.*, 
+                   CONCAT(du.firstName, ' ', du.lastName) as doctorName,
+                   mr.diagnosis
+            FROM prescriptions p
+            JOIN medical_records mr ON p.recordId = mr.recordId
+            JOIN doctors d ON p.prescribedBy = d.doctorId
+            JOIN staff s ON d.staffId = s.staffId
+            JOIN users du ON s.userId = du.userId
+            WHERE mr.patientId = ?
+            ORDER BY p.createdAt DESC
+        ");
+        $stmt->execute([$patientId]);
+        $prescriptions = $stmt->fetchAll();
+        
+        // Get patient vitals
+        $stmt = $pdo->prepare("
+            SELECT v.*, 
+                   CONCAT(du.firstName, ' ', du.lastName) as recordedByName
+            FROM vitals v
+            JOIN medical_records mr ON v.recordId = mr.recordId
+            LEFT JOIN staff s ON v.recordedBy = s.staffId
+            LEFT JOIN users du ON s.userId = du.userId
+            WHERE mr.patientId = ?
+            ORDER BY v.recordedDate DESC
+            LIMIT 10
+        ");
+        $stmt->execute([$patientId]);
+        $vitals = $stmt->fetchAll();
+    }
 }
+
+$success = $_SESSION['success'] ?? null;
+$error = $_SESSION['error'] ?? null;
+unset($_SESSION['success'], $_SESSION['error']);
 ?>
 
-<div class="dashboard">
-    <div class="dashboard-header">
-        <h1>Patient Records</h1>
-        <p>View patient information, appointments, medical records, prescriptions, and billing history</p>
+<div class="staff-container">
+    <div class="staff-page-header">
+        <div class="header-title">
+            <h1><i class="fas fa-folder-open"></i> Patient Records</h1>
+            <p>Search and view patient information</p>
+        </div>
+        <div class="header-actions">
+            <a href="dashboard.php" class="staff-btn staff-btn-outline">
+                <i class="fas fa-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <?php if ($error): ?>
+        <div class="staff-alert staff-alert-error">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($success): ?>
+        <div class="staff-alert staff-alert-success">
+            <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+        </div>
+    <?php endif; ?>
+
+    <!-- Patient Search Section -->
+    <div class="staff-card">
+        <div class="staff-card-header">
+            <h3><i class="fas fa-search"></i> Find Patient</h3>
+        </div>
+        <div class="staff-card-body">
+            <form method="GET" class="staff-search-group">
+                <input type="text" name="search" placeholder="Search by name, email, or phone..." 
+                       value="<?php echo htmlspecialchars($searchTerm); ?>" class="staff-search-input">
+                <button type="submit" class="staff-btn staff-btn-primary">
+                    <i class="fas fa-search"></i> Search
+                </button>
+                <?php if ($searchTerm || $patientId): ?>
+                    <a href="patient-records.php" class="staff-btn staff-btn-outline">Clear</a>
+                <?php endif; ?>
+            </form>
+
+            <?php if ($searchTerm && !empty($searchResults)): ?>
+                <div class="staff-search-results">
+                    <h4>Search Results (<?php echo count($searchResults); ?> found)</h4>
+                    <div class="staff-patient-list">
+                        <?php foreach ($searchResults as $result): ?>
+                            <div class="staff-patient-item">
+                                <div class="staff-patient-info">
+                                    <strong><?php echo htmlspecialchars($result['firstName'] . ' ' . $result['lastName']); ?></strong>
+                                    <small><?php echo htmlspecialchars($result['email']); ?> | <?php echo htmlspecialchars($result['phoneNumber']); ?></small>
+                                </div>
+                                <a href="?patient_id=<?php echo $result['patientId']; ?>" class="staff-btn staff-btn-primary staff-btn-sm">
+                                    View Records
+                                </a>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php elseif ($searchTerm): ?>
+                <div class="staff-search-results">
+                    <p class="staff-text-muted">No patients found. <a href="register-patient.php">Register new patient</a></p>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$searchTerm && !$patientId && !empty($recentPatients)): ?>
+                <div class="staff-recent-patients">
+                    <h4><i class="fas fa-clock"></i> Recent Patients</h4>
+                    <div class="staff-patient-list">
+                        <?php foreach ($recentPatients as $recent): ?>
+                            <div class="staff-patient-item">
+                                <div class="staff-patient-info">
+                                    <strong><?php echo htmlspecialchars($recent['firstName'] . ' ' . $recent['lastName']); ?></strong>
+                                    <small><?php echo htmlspecialchars($recent['email']); ?> | <?php echo htmlspecialchars($recent['phoneNumber']); ?></small>
+                                </div>
+                                <a href="?patient_id=<?php echo $recent['patientId']; ?>" class="staff-btn staff-btn-primary staff-btn-sm">
+                                    View Records
+                                </a>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
     </div>
 
     <?php if ($patient): ?>
         <!-- Patient Information -->
-        <div class="card">
-            <div class="card-header">
+        <div class="staff-card">
+            <div class="staff-card-header">
                 <h3><i class="fas fa-user-circle"></i> Patient Information</h3>
+                <a href="patient-records.php" class="staff-btn staff-btn-outline staff-btn-sm">Search Another</a>
             </div>
-            <div class="card-body">
-                <div class="patient-info-grid">
-                    <div class="info-group">
-                        <h4>Personal Details</h4>
+            <div class="staff-card-body">
+                <div class="staff-patient-info-grid">
+                    <div class="staff-info-group">
+                        <h4><i class="fas fa-user"></i> Personal Details</h4>
                         <p><strong>Name:</strong> <?php echo htmlspecialchars($patient['firstName'] . ' ' . $patient['lastName']); ?></p>
                         <p><strong>Email:</strong> <?php echo htmlspecialchars($patient['email']); ?></p>
                         <p><strong>Phone:</strong> <?php echo htmlspecialchars($patient['phoneNumber']); ?></p>
-                        <p><strong>Date of Birth:</strong> <?php echo $patient['dateOfBirth'] ?: 'N/A'; ?></p>
+                        <p><strong>Date of Birth:</strong> <?php echo $patient['dateOfBirth'] ? date('M j, Y', strtotime($patient['dateOfBirth'])) : 'N/A'; ?></p>
                         <p><strong>Age:</strong> <?php echo calculateAge($patient['dateOfBirth']); ?></p>
                         <p><strong>Blood Type:</strong> <?php echo $patient['bloodType'] ?: 'N/A'; ?></p>
                     </div>
-                    <div class="info-group">
-                        <h4>Medical Information</h4>
-                        <p><strong>Allergies:</strong> <?php echo $patient['knownAllergies'] ?: 'None'; ?></p>
-                        <p><strong>Address:</strong> <?php echo $patient['address'] ?: 'N/A'; ?></p>
+                    <div class="staff-info-group">
+                        <h4><i class="fas fa-notes-medical"></i> Medical Information</h4>
+                        <p><strong>Allergies:</strong> <?php echo htmlspecialchars($patient['knownAllergies'] ?: 'None'); ?></p>
+                        <p><strong>Address:</strong> <?php echo htmlspecialchars($patient['address'] ?: 'N/A'); ?></p>
                     </div>
-                    <div class="info-group">
-                        <h4>Emergency Contact</h4>
-                        <p><strong>Name:</strong> <?php echo $patient['emergencyContactName'] ?: 'N/A'; ?></p>
-                        <p><strong>Phone:</strong> <?php echo $patient['emergencyContactPhone'] ?: 'N/A'; ?></p>
+                    <div class="staff-info-group">
+                        <h4><i class="fas fa-phone-alt"></i> Emergency Contact</h4>
+                        <p><strong>Name:</strong> <?php echo htmlspecialchars($patient['emergencyContactName'] ?: 'N/A'); ?></p>
+                        <p><strong>Phone:</strong> <?php echo htmlspecialchars($patient['emergencyContactPhone'] ?: 'N/A'); ?></p>
                     </div>
-                    <div class="info-group">
-                        <h4>Insurance Information</h4>
-                        <p><strong>Provider:</strong> <?php echo $patient['insuranceProvider'] ?: 'N/A'; ?></p>
-                        <p><strong>Number:</strong> <?php echo $patient['insuranceNumber'] ?: 'N/A'; ?></p>
+                    <div class="staff-info-group">
+                        <h4><i class="fas fa-shield-alt"></i> Insurance</h4>
+                        <p><strong>Provider:</strong> <?php echo htmlspecialchars($patient['insuranceProvider'] ?: 'N/A'); ?></p>
+                        <p><strong>Number:</strong> <?php echo htmlspecialchars($patient['insuranceNumber'] ?: 'N/A'); ?></p>
                     </div>
+                </div>
+
+                <div class="staff-action-buttons" style="margin-top: 25px;">
+                    <a href="book-appointment.php?patient_id=<?php echo $patient['patientId']; ?>" class="staff-btn staff-btn-primary">
+                        <i class="fas fa-calendar-plus"></i> Book Appointment
+                    </a>
+                    <a href="create-bill.php?patient_id=<?php echo $patient['patientId']; ?>" class="staff-btn staff-btn-primary">
+                        <i class="fas fa-receipt"></i> Create Bill
+                    </a>
+                    <a href="process-payment.php?patient_id=<?php echo $patient['patientId']; ?>" class="staff-btn staff-btn-outline">
+                        <i class="fas fa-credit-card"></i> Process Payment
+                    </a>
                 </div>
             </div>
         </div>
 
         <!-- Medical Records -->
-        <div class="card">
-            <div class="card-header">
+        <div class="staff-card">
+            <div class="staff-card-header">
                 <h3><i class="fas fa-notes-medical"></i> Medical Records</h3>
             </div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        汽
-                            <th>Date</th>
-                            <th>Doctor</th>
-                            <th>Specialization</th>
-                            <th>Diagnosis</th>
-                            <th>Actions</th>
+            <div class="staff-table-responsive">
+                <?php if (empty($medicalRecords)): ?>
+                    <p class="staff-empty-message">No medical records found.</p>
+                <?php else: ?>
+                    <table class="staff-data-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Doctor</th>
+                                <th>Diagnosis</th>
+                                <th>Actions</th>
+                            </tr>
                         </thead>
-                    <tbody>
-                        <?php if (empty($medicalRecords)): ?>
-                            汽
-                                <td colspan="5" style="text-align: center;">No medical records found<\/td>
-                            <\/tr>
-                        <?php else: ?>
+                        <tbody>
                             <?php foreach ($medicalRecords as $record): ?>
-                                汽
-                                    <td data-label="Date"><?php echo date('M j, Y', strtotime($record['creationDate'])); ?><\/td>
-                                    <td data-label="Doctor">Dr. <?php echo htmlspecialchars($record['doctorName']); ?><\/td>
-                                    <td data-label="Specialization"><?php echo htmlspecialchars($record['specialization']); ?><\/td>
-                                    <td data-label="Diagnosis"><?php echo substr($record['diagnosis'], 0, 50) . (strlen($record['diagnosis']) > 50 ? '...' : ''); ?><\/td>
+                                <tr>
+                                    <td data-label="Date"><?php echo date('M j, Y', strtotime($record['creationDate'])); ?></td>
+                                    <td data-label="Doctor">Dr. <?php echo htmlspecialchars($record['doctorName']); ?></td>
+                                    <td data-label="Diagnosis"><?php echo htmlspecialchars(substr($record['diagnosis'], 0, 50)); ?>...</td>
                                     <td data-label="Actions">
-                                        <a href="../admin/medical-records.php?view=<?php echo $record['recordId']; ?>" class="btn btn-primary btn-sm">
-                                            <i class="fas fa-eye"><\/i> View Details
-                                        <\/a>
-                                    <\/td>
-                                <\/tr>
+                                        <a href="../admin/medical-records-view.php?id=<?php echo $record['recordId']; ?>" class="staff-btn staff-btn-primary staff-btn-sm" target="_blank">
+                                            View
+                                        </a>
+                                    </td>
+                                </tr>
                             <?php endforeach; ?>
-                        <?php endif; ?>
-                    <\/tbody>
-                <\/table>
-            <\/div>
-        <\/div>
-
-        <!-- Prescriptions Section -->
-        <div class="card">
-            <div class="card-header">
-                <h3><i class="fas fa-prescription"></i> Prescriptions</h3>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
             </div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        汽
-                            <th>Date</th>
-                            <th>Doctor</th>
-                            <th>Medication</th>
-                            <th>Dosage</th>
-                            <th>Frequency</th>
-                            <th>Duration</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </thead>
-                    <tbody>
-                        <?php if (empty($prescriptions)): ?>
-                            汽
-                                <td colspan="8" style="text-align: center;">No prescriptions found<\/td>
-                            <\/tr>
-                        <?php else: ?>
-                            <?php foreach ($prescriptions as $prescription): ?>
-                                汽
-                                    <td data-label="Date"><?php echo date('M j, Y', strtotime($prescription['createdAt'])); ?><\/td>
-                                    <td data-label="Doctor">Dr. <?php echo htmlspecialchars($prescription['doctorName']); ?><\/td>
-                                    <td data-label="Medication"><strong><?php echo htmlspecialchars($prescription['medicationName']); ?><\/strong><\/td>
-                                    <td data-label="Dosage"><?php echo htmlspecialchars($prescription['dosage']); ?><\/td>
-                                    <td data-label="Frequency"><?php echo htmlspecialchars($prescription['frequency']); ?><\/td>
-                                    <td data-label="Duration">
-                                        <?php echo date('M j, Y', strtotime($prescription['startDate'])); ?> - 
-                                        <?php echo $prescription['endDate'] ? date('M j, Y', strtotime($prescription['endDate'])) : 'Ongoing'; ?>
-                                    <\/td>
-                                    <td data-label="Status">
-                                        <span class="status-badge status-<?php echo $prescription['status']; ?>">
-                                            <?php echo ucfirst($prescription['status']); ?>
-                                        <\/span>
-                                    <\/td>
-                                    <td data-label="Actions">
-                                        <button class="btn btn-primary btn-sm" onclick="viewPrescription(<?php echo $prescription['prescriptionId']; ?>)">
-                                            <i class="fas fa-eye"><\/i> View Details
-                                        <\/button>
-                                    <\/td>
-                                <\/tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    <\/tbody>
-                <\/table>
-            <\/div>
-        <\/div>
-
-        <!-- Vitals History -->
-        <div class="card">
-            <div class="card-header">
-                <h3><i class="fas fa-heartbeat"></i> Vitals History</h3>
-            </div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        汽
-                            <th>Date</th>
-                            <th>Recorded By</th>
-                            <th>BP</th>
-                            <th>Heart Rate</th>
-                            <th>Temperature</th>
-                            <th>Weight</th>
-                            <th>Height</th>
-                            <th>SpO2</th>
-                        </thead>
-                    <tbody>
-                        <?php if (empty($vitals)): ?>
-                            汽
-                                <td colspan="8" style="text-align: center;">No vitals recorded<\/td>
-                            <\/tr>
-                        <?php else: ?>
-                            <?php foreach ($vitals as $vital): ?>
-                                汽
-                                    <td data-label="Date"><?php echo date('M j, Y', strtotime($vital['recordedDate'])); ?><\/td>
-                                    <td data-label="Recorded By"><?php echo $vital['recordedByName'] ?: 'Nurse'; ?><\/td>
-                                    <td data-label="BP"><?php echo $vital['bloodPressureSystolic'] ? $vital['bloodPressureSystolic'] . '/' . $vital['bloodPressureDiastolic'] : '-'; ?><\/td>
-                                    <td data-label="Heart Rate"><?php echo $vital['heartRate'] ?: '-'; ?><\/td>
-                                    <td data-label="Temperature"><?php echo $vital['bodyTemperature'] ?: '-'; ?>°C<\/td>
-                                    <td data-label="Weight"><?php echo $vital['weight'] ?: '-'; ?> kg<\/td>
-                                    <td data-label="Height"><?php echo $vital['height'] ?: '-'; ?> cm<\/td>
-                                    <td data-label="SpO2"><?php echo $vital['oxygenSaturation'] ?: '-'; ?>%<\/td>
-                                <\/tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    <\/tbody>
-                <\/table>
-            <\/div>
-        <\/div>
-
-        <!-- Appointments History -->
-        <div class="card">
-            <div class="card-header">
-                <h3><i class="fas fa-calendar-alt"></i> Appointment History</h3>
-            </div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        汽
-                            <th>Date & Time</th>
-                            <th>Doctor</th>
-                            <th>Specialization</th>
-                            <th>Status</th>
-                            <th>Reason</th>
-                        </thead>
-                    <tbody>
-                        <?php if (empty($appointments)): ?>
-                            汽
-                                <td colspan="5" style="text-align: center;">No appointments found<\/td>
-                            <\/tr>
-                        <?php else: ?>
-                            <?php foreach ($appointments as $appointment): ?>
-                                汽
-                                    <td data-label="Date & Time"><?php echo date('M j, Y g:i A', strtotime($appointment['dateTime'])); ?><\/td>
-                                    <td data-label="Doctor">Dr. <?php echo htmlspecialchars($appointment['doctorName']); ?><\/td>
-                                    <td data-label="Specialization"><?php echo htmlspecialchars($appointment['specialization']); ?><\/td>
-                                    <td data-label="Status">
-                                        <span class="status-badge status-<?php echo $appointment['status']; ?>">
-                                            <?php echo ucfirst($appointment['status']); ?>
-                                        <\/span>
-                                    <\/td>
-                                    <td data-label="Reason"><?php echo $appointment['reason'] ?: '-'; ?><\/td>
-                                <\/tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    <\/tbody>
-                <\/table>
-            <\/div>
-        <\/div>
-
-        <!-- Billing History -->
-        <div class="card">
-            <div class="card-header">
-                <h3><i class="fas fa-dollar-sign"></i> Billing History</h3>
-            </div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        汽
-                            <th>Date</th>
-                            <th>Bill ID</th>
-                            <th>Amount</th>
-                            <th>Status</th>
-                            <th>Payment Method</th>
-                            <th>Due Date</th>
-                        </thead>
-                    <tbody>
-                        <?php if (empty($bills)): ?>
-                            汽
-                                <td colspan="6" style="text-align: center;">No billing records found<\/td>
-                            <\/tr>
-                        <?php else: ?>
-                            <?php foreach ($bills as $bill): ?>
-                                汽
-                                    <td data-label="Date"><?php echo date('M j, Y', strtotime($bill['createdAt'])); ?><\/td>
-                                    <td data-label="Bill ID">#<?php echo $bill['billId']; ?><\/td>
-                                    <td data-label="Amount">$<?php echo number_format($bill['totalAmount'], 2); ?><\/td>
-                                    <td data-label="Status">
-                                        <span class="status-badge status-<?php echo $bill['status']; ?>">
-                                            <?php echo ucfirst($bill['status']); ?>
-                                        <\/span>
-                                    <\/td>
-                                    <td data-label="Payment Method"><?php echo $bill['paymentMethod'] ?: '-'; ?><\/td>
-                                    <td data-label="Due Date"><?php echo date('M j, Y', strtotime($bill['dueDate'])); ?><\/td>
-                                <\/tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    <\/tbody>
-                <\/table>
-            <\/div>
-        <\/div>
-
-        <div class="action-buttons">
-            <a href="book-appointment.php?patient_id=<?php echo $patient['patientId']; ?>" class="btn btn-primary">
-                <i class="fas fa-calendar-plus"></i> Book Appointment
-            </a>
-            <a href="create-bill.php?patient_id=<?php echo $patient['patientId']; ?>" class="btn btn-primary">
-                <i class="fas fa-receipt"></i> Create Bill
-            </a>
-            <a href="process-payment.php?patient_id=<?php echo $patient['patientId']; ?>" class="btn btn-outline">
-                <i class="fas fa-credit-card"></i> Process Payment
-            </a>
-            <a href="dashboard.php" class="btn btn-outline">Back to Dashboard</a>
         </div>
 
-    <?php else: ?>
-        <div class="card">
-            <div class="card-body">
-                <p class="text-muted">Please select a patient to view records.</p>
-                <a href="dashboard.php" class="btn btn-primary">Back to Dashboard</a>
+        <!-- Billing History -->
+        <div class="staff-card">
+            <div class="staff-card-header">
+                <h3><i class="fas fa-file-invoice-dollar"></i> Billing History</h3>
+            </div>
+            <div class="staff-table-responsive">
+                <?php if (empty($bills)): ?>
+                    <p class="staff-empty-message">No billing records found.</p>
+                <?php else: ?>
+                    <table class="staff-data-table">
+                        <thead>
+                            <tr>
+                                <th>Bill #</th>
+                                <th>Date</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($bills as $bill): ?>
+                                <tr>
+                                    <td data-label="Bill #">#<?php echo str_pad($bill['billId'], 6, '0', STR_PAD_LEFT); ?></td>
+                                    <td data-label="Date"><?php echo date('M j, Y', strtotime($bill['generatedAt'])); ?></td>
+                                    <td data-label="Amount">$<?php echo number_format($bill['totalAmount'], 2); ?></td>
+                                    <td data-label="Status">
+                                        <span class="staff-status-badge staff-status-<?php echo $bill['status']; ?>">
+                                            <?php echo ucfirst($bill['status']); ?>
+                                        </span>
+                                    </td>
+                                    <td data-label="Actions">
+                                        <a href="../admin/view-bill.php?bill_id=<?php echo $bill['billId']; ?>" class="staff-btn staff-btn-info staff-btn-sm" target="_blank">View</a>
+                                        <?php if ($bill['status'] == 'unpaid'): ?>
+                                            <a href="process-payment.php?bill_id=<?php echo $bill['billId']; ?>" class="staff-btn staff-btn-success staff-btn-sm">Process</a>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Appointments History -->
+        <div class="staff-card">
+            <div class="staff-card-header">
+                <h3><i class="fas fa-calendar-alt"></i> Appointment History</h3>
+            </div>
+            <div class="staff-table-responsive">
+                <?php if (empty($appointments)): ?>
+                    <p class="staff-empty-message">No appointments found.</p>
+                <?php else: ?>
+                    <table class="staff-data-table">
+                        <thead>
+                            <tr>
+                                <th>Date & Time</th>
+                                <th>Doctor</th>
+                                <th>Status</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($appointments as $appointment): ?>
+                                <tr>
+                                    <td data-label="Date & Time"><?php echo date('M j, Y g:i A', strtotime($appointment['dateTime'])); ?></td>
+                                    <td data-label="Doctor">Dr. <?php echo htmlspecialchars($appointment['doctorName']); ?></td>
+                                    <td data-label="Status">
+                                        <span class="staff-status-badge staff-status-<?php echo $appointment['status']; ?>">
+                                            <?php echo ucfirst($appointment['status']); ?>
+                                        </span>
+                                    </td>
+                                    <td data-label="Reason"><?php echo htmlspecialchars($appointment['reason'] ?: '-'); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
             </div>
         </div>
     <?php endif; ?>
 </div>
-
-<script>
-function viewPrescription(prescriptionId) {
-    window.location.href = 'prescription-details.php?id=' + prescriptionId;
-}
-</script>
 
 <?php include '../includes/footer.php'; ?>

@@ -1,4 +1,7 @@
 <?php
+// Set default timezone
+date_default_timezone_set('Australia/Sydney');
+
 // Database configuration
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'healthmanagement');
@@ -28,6 +31,9 @@ define('WORKING_HOURS_END', '17:00');
 define('BREAK_START', '13:00');
 define('BREAK_END', '14:00');
 
+// Medical Certificate Settings
+define('MEDICAL_CERTIFICATE_FEE', 13.00);
+
 // Error Reporting
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
@@ -41,7 +47,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // Database connection
 try {
-    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $pdo->exec("SET NAMES utf8mb4");
@@ -52,4 +58,3 @@ try {
 // Include required files
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/auth.php';
-?>

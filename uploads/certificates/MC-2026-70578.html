@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Medical Certificate - MC-2026-70578</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: "Times New Roman", Times, serif; 
+            line-height: 1.6; 
+            color: #000000; 
+            margin: 0; 
+            padding: 0;
+            background: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+        }
+        .certificate {
+            max-width: 700px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 40px 30px;
+        }
+        .header {
+            text-align: left;
+            margin-bottom: 40px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .logo i {
+            font-size: 32px;
+            color: #dc2626;
+        }
+        .hospital-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: #000000;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+        .hospital-details {
+            font-size: 11px;
+            color: #444444;
+            line-height: 1.5;
+        }
+        .spacer-20 { height: 20px; }
+        .spacer-30 { height: 30px; }
+        .spacer-40 { height: 40px; }
+        .spacer-50 { height: 50px; }
+        .spacer-60 { height: 60px; }
+        .date {
+            text-align: right;
+            font-size: 13px;
+            font-weight: normal;
+        }
+        .content {
+            margin: 20px 0;
+        }
+        .patient-name {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .body-text {
+            font-size: 14px;
+            margin-bottom: 15px;
+            line-height: 1.7;
+        }
+        .date-range {
+            font-weight: 700;
+        }
+        .closing {
+            margin: 50px 0 15px;
+            font-size: 14px;
+        }
+        .signature-section {
+            margin-top: 20px;
+        }
+        .signature-image {
+            margin: 10px 0 15px;
+            min-height: 60px;
+        }
+        .signature-image img {
+            max-width: 220px;
+            height: auto;
+        }
+        .doctor-name {
+            font-weight: 700;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .doctor-credentials {
+            font-size: 12px;
+            color: #444444;
+            line-height: 1.5;
+        }
+        .footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid #cccccc;
+            font-size: 10px;
+            color: #777777;
+            text-align: center;
+            line-height: 1.5;
+        }
+        @media print {
+            body { 
+                padding: 0;
+                display: block;
+                min-height: auto;
+            }
+            .certificate { 
+                max-width: 100%; 
+                padding: 30px 25px;
+            }
+        }
+    </style>
+    <!-- Font Awesome for heartbeat icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="certificate">
+        <div class="header">
+            <div class="logo">
+                <i class="fas fa-heartbeat"></i>
+                <span class="hospital-name">HealthManagement</span>
+            </div>
+            <div class="hospital-details">
+                Fussel Lane, Gungahlin, ACT 2912, Australia<br>
+                Phone: +61 438 347 3483 | Emergency: +61 455 2627<br>
+                Email: info@healthmanagement.com.au | ABN: 43 571 905 327
+            </div>
+        </div>
+        
+        <div class="spacer-30"></div>
+        
+        <div class="date">
+            19/04/2026
+        </div>
+        
+        <div class="spacer-40"></div>
+        
+        <div class="content">
+            <div class="patient-name">
+                Himal Karki has been clinically assessed.
+            </div>
+            
+            <div class="body-text">
+                They currently have a medical condition and will be unable to attend work/study 
+                from <strong>19/04/2026</strong> to <strong>19/04/2026</strong> inclusive.
+            </div>
+        </div>
+        
+        <div class="spacer-50"></div>
+        
+        <div class="closing">
+            Sincerely,
+        </div>
+        
+        <div class="signature-section">
+            <div class="signature-image">
+                <span style="font-family: "Brush Script MT", cursive; font-size: 28px; color: #1a1a1a;">David Wilson</span>
+            </div>
+            
+            <div class="spacer-30"></div>
+            
+            <div class="doctor-name">
+                Dr David Wilson
+            </div>
+            <div class="doctor-credentials">
+                Ophthalmology
+                | AHPRA Registration No. MED12350
+            </div>
+        </div>
+        
+        <div class="spacer-50"></div>
+        
+        <div class="footer">
+            This is a computer-generated medical certificate and is valid without a physical signature.<br>
+            Certificate #: MC-2026-70578 | Issued: 19/04/2026
+        </div>
+    </div>
+</body>
+</html>

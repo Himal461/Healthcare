@@ -7,14 +7,16 @@ if (isLoggedIn()) {
 }
 
 $pageTitle = "Verify Email - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="css/root.css">';
 include 'includes/header.php';
 
 $code = $_GET['code'] ?? '';
+$error = '';
+$success = '';
 
 if (empty($code)) {
     $error = "Invalid verification code.";
 } else {
-    // Check if verification code exists
     $stmt = $pdo->prepare("SELECT userId FROM users WHERE verificationCode = ?");
     $stmt->execute([$code]);
     $user = $stmt->fetch();
@@ -22,7 +24,6 @@ if (empty($code)) {
     if (!$user) {
         $error = "Invalid or expired verification code.";
     } else {
-        // Verify the user
         $stmt = $pdo->prepare("UPDATE users SET isVerified = 1, verificationCode = NULL WHERE verificationCode = ?");
         $stmt->execute([$code]);
         
@@ -32,27 +33,30 @@ if (empty($code)) {
 }
 ?>
 
-<div class="form-container">
-    <h2>Email Verification</h2>
-    
-    <?php if (isset($error)): ?>
-        <div class="alert alert-error">
-            <i class="fas fa-exclamation-circle"></i>
-            <?php echo $error; ?>
+<div class="root-container">
+    <div class="root-form-container">
+        <div class="root-form-header">
+            <i class="fas fa-envelope-open-text"></i>
+            <h2>Email Verification</h2>
         </div>
-        <div style="text-align: center; margin-top: 20px;">
-            <p>Please try registering again or contact support.</p>
-            <a href="register.php" class="btn btn-primary">Register Again</a>
-        </div>
-    <?php elseif (isset($success)): ?>
-        <div class="alert alert-success">
-            <i class="fas fa-check-circle"></i>
-            <?php echo $success; ?>
-        </div>
-        <div style="text-align: center; margin-top: 20px;">
-            <a href="login.php" class="btn btn-primary">Login Now</a>
-        </div>
-    <?php endif; ?>
+        
+        <?php if ($error): ?>
+            <div class="root-alert root-alert-error">
+                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+            </div>
+            <div style="text-align: center; margin-top: 20px;">
+                <p>Please try registering again or contact support.</p>
+                <a href="register.php" class="root-btn root-btn-primary">Register Again</a>
+            </div>
+        <?php elseif ($success): ?>
+            <div class="root-alert root-alert-success">
+                <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
+            </div>
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="login.php" class="root-btn root-btn-primary">Login Now</a>
+            </div>
+        <?php endif; ?>
+    </div>
 </div>
 
 <?php include 'includes/footer.php'; ?>

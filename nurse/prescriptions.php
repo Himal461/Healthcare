@@ -4,45 +4,38 @@ require_once '../includes/auth.php';
 checkRole('nurse');
 
 $pageTitle = "Prescriptions - HealthManagement";
+$extraCSS = '<link rel="stylesheet" href="../css/nurse.css">';
 include '../includes/header.php';
 
-$userId = $_SESSION['user_id'];
 $searchTerm = $_GET['search'] ?? '';
 $statusFilter = $_GET['status'] ?? '';
 
-// Get all prescriptions (nurses can view all)
 $query = "
     SELECT p.*, 
-           CONCAT(u.firstName, ' ', u.lastName) as patientName,
+           CONCAT(u.firstName, ' ', u.lastName) as patientName, 
            CONCAT(du.firstName, ' ', du.lastName) as doctorName,
-           u.email as patientEmail,
-           u.phoneNumber as patientPhone,
+           u.email as patientEmail, 
+           u.phoneNumber as patientPhone, 
            mr.diagnosis
-    FROM prescriptions p
-    JOIN medical_records mr ON p.recordId = mr.recordId
-    JOIN patients pt ON mr.patientId = pt.patientId
+    FROM prescriptions p 
+    JOIN medical_records mr ON p.recordId = mr.recordId 
+    JOIN patients pt ON mr.patientId = pt.patientId 
     JOIN users u ON pt.userId = u.userId
-    JOIN doctors d ON p.prescribedBy = d.doctorId
-    JOIN staff s ON d.staffId = s.staffId
-    JOIN users du ON s.userId = du.userId
+    JOIN doctors d ON p.prescribedBy = d.doctorId 
+    JOIN staff s ON d.staffId = s.staffId 
+    JOIN users du ON s.userId = du.userId 
     WHERE 1=1
 ";
-
 $params = [];
 
 if ($searchTerm) {
     $query .= " AND (u.firstName LIKE ? OR u.lastName LIKE ? OR p.medicationName LIKE ?)";
-    $searchLike = "%$searchTerm%";
-    $params[] = $searchLike;
-    $params[] = $searchLike;
-    $params[] = $searchLike;
+    $params = ["%$searchTerm%", "%$searchTerm%", "%$searchTerm%"];
 }
-
 if ($statusFilter) {
     $query .= " AND p.status = ?";
     $params[] = $statusFilter;
 }
-
 $query .= " ORDER BY p.createdAt DESC";
 
 $stmt = $pdo->prepare($query);
@@ -50,90 +43,79 @@ $stmt->execute($params);
 $prescriptions = $stmt->fetchAll();
 ?>
 
-<div class="dashboard">
-    <div class="dashboard-header">
-        <h1>Prescriptions</h1>
-        <p>View and manage patient prescriptions</p>
+<div class="nurse-container">
+    <div class="nurse-page-header">
+        <div class="header-title">
+            <h1><i class="fas fa-prescription"></i> Prescriptions</h1>
+            <p>View patient prescriptions</p>
+        </div>
     </div>
 
-    <!-- Filters -->
-    <div class="card">
-        <div class="card-header">
-            <h3>Filter Prescriptions</h3>
+    <div class="nurse-card">
+        <div class="nurse-card-header">
+            <h3><i class="fas fa-filter"></i> Filter Prescriptions</h3>
         </div>
-        <div class="card-body">
-            <form method="GET" action="" class="filter-form">
-                <div class="filter-row">
-                    <div class="filter-group">
-                        <label for="status">Status</label>
-                        <select id="status" name="status">
+        <div class="nurse-card-body">
+            <form method="GET" class="nurse-filter-form">
+                <div class="nurse-filter-row">
+                    <div class="nurse-filter-group">
+                        <label>Status</label>
+                        <select name="status">
                             <option value="">All Status</option>
                             <option value="active" <?php echo $statusFilter == 'active' ? 'selected' : ''; ?>>Active</option>
                             <option value="completed" <?php echo $statusFilter == 'completed' ? 'selected' : ''; ?>>Completed</option>
-                            <option value="expired" <?php echo $statusFilter == 'expired' ? 'selected' : ''; ?>>Expired</option>
-                            <option value="cancelled" <?php echo $statusFilter == 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
                         </select>
                     </div>
-                    
-                    <div class="filter-group">
-                        <label for="search">Search</label>
-                        <input type="text" id="search" name="search" placeholder="Patient name or medication..." value="<?php echo htmlspecialchars($searchTerm); ?>">
+                    <div class="nurse-filter-group">
+                        <label>Search</label>
+                        <input type="text" name="search" placeholder="Patient name or medication..." value="<?php echo htmlspecialchars($searchTerm); ?>">
                     </div>
-                    
-                    <div class="filter-actions">
-                        <button type="submit" class="btn btn-primary">Apply Filters</button>
-                        <a href="prescriptions.php" class="btn btn-outline">Reset</a>
+                    <div class="nurse-filter-actions">
+                        <button type="submit" class="nurse-btn nurse-btn-primary">Filter</button>
+                        <a href="prescriptions.php" class="nurse-btn nurse-btn-outline">Reset</a>
                     </div>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Prescriptions List -->
-    <div class="card">
-        <div class="card-header">
-            <h3>Prescriptions (<?php echo count($prescriptions); ?> found)</h3>
+    <div class="nurse-card">
+        <div class="nurse-card-header">
+            <h3><i class="fas fa-list"></i> Prescriptions (<?php echo count($prescriptions); ?>)</h3>
         </div>
-        <div class="table-container">
-            <table class="data-table">
+        <div class="nurse-table-responsive">
+            <table class="nurse-data-table">
                 <thead>
-                    
+                    <tr>
                         <th>Date</th>
                         <th>Patient</th>
                         <th>Doctor</th>
                         <th>Medication</th>
                         <th>Dosage</th>
-                        <th>Frequency</th>
                         <th>Status</th>
                         <th>Actions</th>
-                    </thead>
+                    </tr>
+                </thead>
                 <tbody>
-                    <?php if (empty($prescriptions)): ?>
-                        
-                            <td colspan="8" style="text-align: center;">No prescriptions found<\/td>
+                    <?php foreach ($prescriptions as $p): ?>
+                        <tr>
+                            <td data-label="Date"><?php echo date('M j, Y', strtotime($p['createdAt'])); ?></td>
+                            <td data-label="Patient"><?php echo htmlspecialchars($p['patientName']); ?></td>
+                            <td data-label="Doctor">Dr. <?php echo htmlspecialchars($p['doctorName']); ?></td>
+                            <td data-label="Medication"><?php echo htmlspecialchars($p['medicationName']); ?></td>
+                            <td data-label="Dosage"><?php echo htmlspecialchars($p['dosage']); ?></td>
+                            <td data-label="Status">
+                                <span class="nurse-status-badge nurse-status-<?php echo $p['status']; ?>">
+                                    <?php echo ucfirst($p['status']); ?>
+                                </span>
+                            </td>
+                            <td data-label="Actions">
+                                <button class="nurse-btn nurse-btn-primary nurse-btn-sm" onclick="viewPrescription(<?php echo $p['prescriptionId']; ?>)">
+                                    <i class="fas fa-eye"></i> View
+                                </button>
+                            </td>
                         </tr>
-                    <?php else: ?>
-                        <?php foreach ($prescriptions as $prescription): ?>
-                            
-                                <td data-label="Date"><?php echo date('M j, Y', strtotime($prescription['createdAt'])); ?></td>
-                                <td data-label="Patient"><?php echo htmlspecialchars($prescription['patientName']); ?></td>
-                                <td data-label="Doctor">Dr. <?php echo htmlspecialchars($prescription['doctorName']); ?></td>
-                                <td data-label="Medication"><strong><?php echo htmlspecialchars($prescription['medicationName']); ?></strong></td>
-                                <td data-label="Dosage"><?php echo htmlspecialchars($prescription['dosage']); ?></td>
-                                <td data-label="Frequency"><?php echo htmlspecialchars($prescription['frequency']); ?></td>
-                                <td data-label="Status">
-                                    <span class="status-badge status-<?php echo $prescription['status']; ?>">
-                                        <?php echo ucfirst($prescription['status']); ?>
-                                    </span>
-                                </td>
-                                <td data-label="Actions">
-                                    <button class="btn btn-primary btn-sm" onclick="viewPrescription(<?php echo $prescription['prescriptionId']; ?>)">
-                                        <i class="fas fa-eye"></i> View Details
-                                    </button>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
@@ -141,9 +123,9 @@ $prescriptions = $stmt->fetchAll();
 </div>
 
 <script>
-function viewPrescription(prescriptionId) {
-    window.location.href = `prescription-details.php?id=${prescriptionId}`;
+function viewPrescription(id) {
+    window.location.href = `prescription-details.php?id=${id}`;
 }
 </script>
 
-<?php include '..\/includes\/footer.php'; ?>
+<?php include '../includes/footer.php'; ?>

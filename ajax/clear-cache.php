@@ -4,33 +4,23 @@ session_start();
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['user_role'] !== 'admin') {
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit();
 }
 
-$doctorId = $_GET['doctor_id'] ?? null;
-$date = $_GET['date'] ?? null;
+$cacheDir = __DIR__ . '/../cache/';
+$cleared = 0;
 
-if (!$doctorId || !$date) {
-    echo json_encode(['success' => false, 'error' => 'Missing parameters']);
-    exit();
+if (is_dir($cacheDir)) {
+    $files = glob($cacheDir . '*');
+    foreach ($files as $file) {
+        if (is_file($file)) {
+            unlink($file);
+            $cleared++;
+        }
+    }
 }
 
-// Get booked time slots for this doctor on this date
-$stmt = $pdo->prepare("
-    SELECT TIME(dateTime) as slot_time 
-    FROM appointments 
-    WHERE doctorId = ? AND DATE(dateTime) = ? 
-    AND status NOT IN ('cancelled', 'no-show')
-");
-$stmt->execute([$doctorId, $date]);
-$booked = $stmt->fetchAll();
-
-$bookedSlots = [];
-foreach ($booked as $b) {
-    $bookedSlots[] = $b['slot_time'];
-}
-
-echo json_encode(['success' => true, 'booked_slots' => $bookedSlots]);
-?>
+logAction($_SESSION['user_id'], 'CLEAR_CACHE', "Cleared $cleared cache files");
+echo json_encode(['success' => true, 'cleared' => $cleared]);
