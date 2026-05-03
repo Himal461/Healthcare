@@ -38,13 +38,12 @@ function generatePDF($html, $certificateNumber) {
     $options->set('isRemoteEnabled', true);
     $options->set('isHtml5ParserEnabled', true);
 
-    // Avoid Dompdf FontLib custom font error
+    // Prevent Dompdf FontLib error
     $options->set('defaultFont', 'Helvetica');
     $options->set('isFontSubsettingEnabled', false);
 
     $dompdf = new Dompdf($options);
 
-    // Replace risky fonts if they appear in HTML
     $html = str_replace('DejaVu Sans, Arial, sans-serif', 'Helvetica, Arial, sans-serif', $html);
 
     $dompdf->loadHtml($html);
@@ -63,6 +62,87 @@ function generatePDF($html, $certificateNumber) {
     file_put_contents($filePath, $dompdf->output());
 
     return 'uploads/certificates/' . $fileName;
+}
+
+function formatCertificateDate($date) {
+    if (empty($date)) {
+        return 'N/A';
+    }
+
+    $timestamp = strtotime($date);
+    if (!$timestamp) {
+        return 'N/A';
+    }
+
+    $day = (int)date('j', $timestamp);
+
+    if ($day >= 11 && $day <= 13) {
+        $suffix = 'th';
+    } else {
+        switch ($day % 10) {
+            case 1:
+                $suffix = 'st';
+                break;
+            case 2:
+                $suffix = 'nd';
+                break;
+            case 3:
+                $suffix = 'rd';
+                break;
+            default:
+                $suffix = 'th';
+                break;
+        }
+    }
+
+    return $day . $suffix . ' of ' . date('F Y', $timestamp);
+}
+
+function calculateCertificateDays($startDate, $endDate) {
+    if (empty($startDate) || empty($endDate)) {
+        return '1 day';
+    }
+
+    try {
+        $start = new DateTime($startDate);
+        $end = new DateTime($endDate);
+
+        // Inclusive date calculation
+        $days = $start->diff($end)->days + 1;
+
+        if ($days <= 1) {
+            return '1 day';
+        }
+
+        return $days . ' days';
+    } catch (Exception $e) {
+        return '1 day';
+    }
+}
+
+function formatCertificatePurpose($purpose) {
+    $purpose = trim((string)$purpose);
+
+    if ($purpose === '') {
+        return 'Employment';
+    }
+
+    $lowerPurpose = strtolower($purpose);
+
+    if (
+        $lowerPurpose === 'work' ||
+        $lowerPurpose === 'employment' ||
+        strpos($lowerPurpose, 'work') !== false ||
+        strpos($lowerPurpose, 'employ') !== false
+    ) {
+        return 'Employment';
+    }
+
+    // For study, school, university, travel, insurance, other etc.
+    $parts = preg_split('/[\s\/\-_]+/', $purpose);
+    $firstWord = $parts[0] ?? $purpose;
+
+    return ucfirst(strtolower($firstWord));
 }
 
 function generateCertificateHTML($certificateId, $doctorFullName, $username) {
@@ -101,9 +181,25 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
         $doctorDisplayName = $cert['doctor_name'] ?? 'Medical Officer';
     }
 
-    $issueDate = date('d/m/Y');
-    $startDate = !empty($cert['start_date']) ? date('d/m/Y', strtotime($cert['start_date'])) : 'N/A';
-    $endDate = !empty($cert['end_date']) ? date('d/m/Y', strtotime($cert['end_date'])) : 'N/A';
+    $certificateNumber = htmlspecialchars($cert['certificate_number'] ?? ('MC-' . $certificateId));
+    $patientName = htmlspecialchars($cert['patient_name'] ?? 'Patient');
+
+    $issueDate = !empty($cert['created_at'])
+        ? date('d/m/Y', strtotime($cert['created_at']))
+        : date('d/m/Y');
+
+    $startDateRaw = $cert['start_date'] ?? null;
+    $endDateRaw = $cert['end_date'] ?? null;
+
+    $startDate = formatCertificateDate($startDateRaw);
+    $endDate = formatCertificateDate($endDateRaw);
+    $daysText = calculateCertificateDays($startDateRaw, $endDateRaw);
+
+    $purposeRaw = $cert['certificate_type'] ?? 'Employment';
+    $purposeText = formatCertificatePurpose($purposeRaw);
+
+    $specialization = htmlspecialchars($cert['specialization'] ?? 'General');
+    $licenseNumber = !empty($cert['licenseNumber']) ? htmlspecialchars($cert['licenseNumber']) : '';
 
     // Logo image
     $logoHtml = '';
@@ -130,11 +226,6 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
             $signatureHtml = '<img src="data:' . $signatureMime . ';base64,' . $signatureBase64 . '">';
         }
     }
-
-    $certificateNumber = htmlspecialchars($cert['certificate_number'] ?? ('MC-' . $certificateId));
-    $patientName = htmlspecialchars($cert['patient_name'] ?? 'Patient');
-    $specialization = htmlspecialchars($cert['specialization'] ?? 'General Medicine');
-    $licenseNumber = !empty($cert['licenseNumber']) ? htmlspecialchars($cert['licenseNumber']) : '';
 
     $html = '<!DOCTYPE html>
 <html>
@@ -164,18 +255,18 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
         }
 
         .header {
-            margin-bottom: 25px;
+            margin-bottom: 28px;
         }
 
         .logo-row {
             display: table;
             width: 100%;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
 
         .logo-cell {
             display: table-cell;
-            width: 65px;
+            width: 68px;
             vertical-align: middle;
         }
 
@@ -185,14 +276,14 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
         }
 
         .logo-image {
-            width: 50px;
+            width: 53px;
             height: auto;
             margin-right: 12px;
             vertical-align: middle;
         }
 
         .hospital-name {
-            font-size: 22px;
+            font-size: 25px;
             font-weight: 700;
             color: #000000;
             text-transform: uppercase;
@@ -201,33 +292,35 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
         }
 
         .hospital-details {
-            font-size: 9px;
+            font-size: 12px;
             color: #333333;
-            line-height: 1.3;
-            margin-top: 5px;
-            margin-left: 0;
+            line-height: 1.35;
+            margin-top: 6px;
         }
 
         .date {
-            text-align: right;
-            font-size: 11px;
-            margin: 25px 0 35px;
-        }
+    text-align: right;
+    font-size: 14px;
+    font-weight: 500;
+    margin: 28px 0 80px;
+}
 
-        .patient-name {
-            font-weight: 700;
-            font-size: 12px;
-            margin-bottom: 15px;
-        }
+.certificate-title {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 65px;
+}
 
         .body-text {
-            font-size: 12px;
-            line-height: 1.5;
+            font-size: 15px;
+            line-height: 1.7;
+            margin-bottom: 18px;
         }
 
         .closing {
-            margin: 50px 0 15px;
-            font-size: 12px;
+            margin: 52px 0 15px;
+            font-size: 15px;
         }
 
         .signature-section {
@@ -246,20 +339,21 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
 
         .doctor-name {
             font-weight: 700;
-            font-size: 12px;
+            font-size: 15px;
         }
 
         .doctor-credentials {
-            font-size: 10px;
+            font-size: 13px;
             color: #333333;
-            line-height: 1.3;
+            line-height: 1.35;
+            margin-top: 2px;
         }
 
         .footer {
             margin-top: 45px;
             padding-top: 12px;
             border-top: 1px solid #cccccc;
-            font-size: 8px;
+            font-size: 11px;
             color: #555555;
             text-align: center;
         }
@@ -288,18 +382,23 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
                 Email: admin@careaus.com.au | ABN: 43-668-260-964
             </div>
         </div>
-        
+
         <div class="date">
             ' . $issueDate . '
         </div>
-        
-        <div class="patient-name">
-            ' . $patientName . ' has been clinically assessed.
+
+        <div class="certificate-title">
+            Medical Certificate
         </div>
-        
+
         <div class="body-text">
-            They currently have a medical condition and will be unable to attend work/study 
-            from <strong>' . $startDate . '</strong> to <strong>' . $endDate . '</strong> inclusive.
+            This document is to certify that <strong>' . $patientName . '</strong>, is unfit for their study/work 
+            from the <strong>' . $startDate . '</strong> until the <strong>' . $endDate . '</strong> inclusive 
+            (' . $daysText . ').
+        </div>
+
+        <div class="body-text">
+            This document is produced for the purpose of ' . htmlspecialchars($purposeText) . '.
         </div>
         
         <div class="closing">
