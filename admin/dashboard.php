@@ -264,6 +264,7 @@ unset($_SESSION['success'], $_SESSION['error']);
                 <a href="patients.php" class="admin-btn admin-btn-outline"><i class="fas fa-user-injured"></i> Manage Patients</a>
                 <a href="appointments.php" class="admin-btn admin-btn-outline"><i class="fas fa-calendar-alt"></i> Appointments</a>
                 <a href="reports.php" class="admin-btn admin-btn-outline"><i class="fas fa-chart-bar"></i> Reports</a>
+                <a href="view-certificates.php" class="admin-btn admin-btn-outline"><i class="fas fa-certificate"></i> View Certificates</a>    
                 <a href="audit-log.php" class="admin-btn admin-btn-outline"><i class="fas fa-history"></i> Audit Log</a>
                 <a href="departments.php" class="admin-btn admin-btn-outline"><i class="fas fa-building"></i> Departments</a>
             </div>

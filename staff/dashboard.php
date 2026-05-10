@@ -183,6 +183,11 @@ unset($_SESSION['success'], $_SESSION['error']);
                     <i class="fas fa-calendar-alt"></i>
                     <span>Reschedule</span> 
                 </a>
+
+                <a href="view-certificates.php" class="staff-action-card">
+                    <i class="fas fa-certificate"></i>
+                    <span>View Certificates</span>      
+                </a>
             </div>
         </div>
     </div>
