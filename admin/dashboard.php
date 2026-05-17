@@ -229,6 +229,25 @@ unset($_SESSION['success'], $_SESSION['error']);
         </div>
     </div>
 
+    <!-- Quick Actions -->
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3><i class="fas fa-bolt"></i> Manage</h3>
+        </div>
+        <div class="admin-card-body">
+            <div class="admin-quick-actions">
+                <a href="users.php" class="admin-btn admin-btn-primary"><i class="fas fa-users"></i> Manage Users</a>
+                <a href="staff.php" class="admin-btn admin-btn-primary"><i class="fas fa-id-badge"></i> Manage Staff</a>
+                <a href="patients.php" class="admin-btn admin-btn-outline"><i class="fas fa-user-injured"></i> Manage Patients</a>
+                <a href="appointments.php" class="admin-btn admin-btn-outline"><i class="fas fa-calendar-alt"></i> Appointments</a>
+                <a href="reports.php" class="admin-btn admin-btn-outline"><i class="fas fa-chart-bar"></i> Reports</a>
+                <a href="view-certificates.php" class="admin-btn admin-btn-outline"><i class="fas fa-certificate"></i> View Certificates</a>    
+                <a href="audit-log.php" class="admin-btn admin-btn-outline"><i class="fas fa-history"></i> Audit Log</a>
+                <a href="departments.php" class="admin-btn admin-btn-outline"><i class="fas fa-building"></i> Departments</a>
+            </div>
+        </div>
+    </div>
+    
     <!-- Finance Quick Actions -->
     <div class="admin-card">
         <div class="admin-card-header">
@@ -252,24 +271,6 @@ unset($_SESSION['success'], $_SESSION['error']);
         </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="admin-card">
-        <div class="admin-card-header">
-            <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
-        </div>
-        <div class="admin-card-body">
-            <div class="admin-quick-actions">
-                <a href="users.php" class="admin-btn admin-btn-primary"><i class="fas fa-users"></i> Manage Users</a>
-                <a href="staff.php" class="admin-btn admin-btn-primary"><i class="fas fa-id-badge"></i> Manage Staff</a>
-                <a href="patients.php" class="admin-btn admin-btn-outline"><i class="fas fa-user-injured"></i> Manage Patients</a>
-                <a href="appointments.php" class="admin-btn admin-btn-outline"><i class="fas fa-calendar-alt"></i> Appointments</a>
-                <a href="reports.php" class="admin-btn admin-btn-outline"><i class="fas fa-chart-bar"></i> Reports</a>
-                <a href="view-certificates.php" class="admin-btn admin-btn-outline"><i class="fas fa-certificate"></i> View Certificates</a>    
-                <a href="audit-log.php" class="admin-btn admin-btn-outline"><i class="fas fa-history"></i> Audit Log</a>
-                <a href="departments.php" class="admin-btn admin-btn-outline"><i class="fas fa-building"></i> Departments</a>
-            </div>
-        </div>
-    </div>
 
     <!-- Recent Activity -->
     <div class="admin-card">

@@ -215,7 +215,7 @@ unset($_SESSION['success'], $_SESSION['error']);
     <!-- Quick Actions -->
     <div class="accountant-card">
         <div class="accountant-card-header">
-            <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+            <h3><i class="fas fa-bolt"></i> Accountant's Actions</h3>
         </div>
         <div class="accountant-card-body">
             <div class="accountant-quick-actions-grid">

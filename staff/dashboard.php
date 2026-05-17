@@ -158,7 +158,7 @@ unset($_SESSION['success'], $_SESSION['error']);
 
     <div class="staff-card">
         <div class="staff-card-header">
-            <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+            <h3><i class="fas fa-bolt"></i> Staff's Actions</h3>
         </div>
         <div class="staff-card-body">
             <div class="staff-quick-actions-grid">

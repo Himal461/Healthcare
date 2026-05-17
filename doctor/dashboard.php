@@ -282,7 +282,7 @@ function getAppointmentLink($pdo, $appointmentId, $patientId) {
 
     <!-- Quick Actions -->
     <div class="doctor-quick-actions">
-        <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+        <h3><i class="fas fa-bolt"></i> Doctor's Actions</h3>
         <div class="doctor-actions-grid">
             <a href="appointments.php" class="doctor-action-card">
                 <i class="fas fa-calendar-alt"></i>

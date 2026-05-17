@@ -228,202 +228,319 @@ function generateCertificateHTML($certificateId, $doctorFullName, $username) {
     }
 
     $html = '<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Medical Certificate - ' . $certificateNumber . '</title>
-
     <style>
         * { 
             margin: 0; 
             padding: 0; 
             box-sizing: border-box; 
         }
-
-        body { 
-            font-family: Helvetica, Arial, sans-serif;
-            line-height: 1.5; 
-            color: #000000; 
-            margin: 0; 
-            padding: 35px;
-            background: white;
+        
+        html, body {
+            width: 100%;
+            background: #ffffff;
         }
 
+        body {
+            font-family: "Times New Roman", Times, Georgia, serif;
+            color: #1a1a1a;
+            margin: 0;
+            padding: 28px 44px 24px 44px;
+            background: #ffffff;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        
         .certificate {
-            max-width: 600px;
+            max-width: 735px;
             margin: 0 auto;
+            background: #ffffff;
+        }
+        
+        .header {
+            margin-bottom: 24px;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        
+        .header-top {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            margin-bottom: 0;
+        }
+        
+        .header-logo {
+            flex-shrink: 0;
+            width: 95px;
+            padding-top: 4px;
+        }
+        
+        .header-logo img {
+            width: 85px;
+            height: auto;
+            display: block;
+        }
+        
+        .header-info {
+            flex: 1;
+        }
+        
+        .hospital-name {
+            font-size: 34px;
+            font-weight: 700;
+            color: #000;
+            letter-spacing: 1.4px;
+            line-height: 1.05;
+            text-transform: uppercase;
+            margin-bottom: 9px;
+        }
+        
+        .hospital-address {
+            font-size: 16px;
+            color: #2d2d2d;
+            line-height: 1.45;
+            margin-top: 0;
+        }
+        
+        .hospital-address a {
+            color: #2d2d2d;
+            text-decoration: none;
+        }
+        
+        .reference-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 28px 0 38px 0;
+            font-size: 16px;
+            line-height: 1.4;
+        }
+        
+        .date-line {
+            font-weight: 400;
+            color: #1a1a1a;
+        }
+        
+        .ref-line {
+            font-weight: 400;
+            color: #1a1a1a;
+        }
+        
+        .certificate-title {
+            text-align: center;
+            font-size: 32px;
+            font-weight: 700;
+            color: #000;
+            margin: 0 0 42px 0;
+            letter-spacing: 1px;
+        }
+        
+        .patient-section {
+            margin-bottom: 34px;
         }
 
-        .header {
+        .re-line {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #1a1a1a;
+        }
+        
+        .patient-name {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 9px;
+            color: #1a1a1a;
+            padding-left: 48px;
+        }
+        
+        .patient-address {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 0;
+            line-height: 1.5;
+            padding-left: 48px;
+            max-width: 520px;
+        }
+        
+        .body-text {
+            font-size: 16px;
+            line-height: 1.72;
+            margin-bottom: 34px;
+            color: #1a1a1a;
+        }
+        
+        .purpose-text {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 42px;
+            color: #1a1a1a;
+        }
+        
+        .closing {
+            font-size: 16px;
+            margin-bottom: 18px;
+            color: #1a1a1a;
+        }
+        
+        .signature-section {
+            margin-top: 0;
             margin-bottom: 28px;
         }
-
-        .logo-row {
-            display: table;
-            width: 100%;
-            margin-bottom: 8px;
-        }
-
-        .logo-cell {
-            display: table-cell;
-            width: 68px;
-            vertical-align: middle;
-        }
-
-        .name-cell {
-            display: table-cell;
-            vertical-align: middle;
-        }
-
-        .logo-image {
-            width: 53px;
+        
+        .signature-section img {
+            width: 195px;
             height: auto;
-            margin-right: 12px;
-            vertical-align: middle;
+            margin: 0 0 12px 0;
+            display: block;
         }
-
-        .hospital-name {
-            font-size: 25px;
-            font-weight: 700;
-            color: #000000;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            line-height: 1;
-        }
-
-        .hospital-details {
+        
+        .signed-line {
             font-size: 12px;
-            color: #333333;
-            line-height: 1.35;
-            margin-top: 6px;
+            color: #555;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-style: italic;
         }
-
-        .date {
-    text-align: right;
-    font-size: 14px;
-    font-weight: 500;
-    margin: 28px 0 80px;
-}
-
-.certificate-title {
-    text-align: center;
-    font-size: 28px;
-    font-weight: 700;
-    margin-bottom: 65px;
-}
-
-        .body-text {
-            font-size: 15px;
-            line-height: 1.7;
-            margin-bottom: 18px;
-        }
-
-        .closing {
-            margin: 52px 0 15px;
-            font-size: 15px;
-        }
-
-        .signature-section {
-            margin-top: 15px;
-        }
-
-        .signature-image {
-            margin: 5px 0 8px;
-            min-height: 35px;
-        }
-
-        .signature-image img {
-            width: 180px;
-            height: auto;
-        }
-
+        
         .doctor-name {
+            font-size: 16px;
             font-weight: 700;
-            font-size: 15px;
+            color: #1a1a1a;
+            margin-top: 0;
+            margin-bottom: 6px;
         }
-
+        
         .doctor-credentials {
-            font-size: 13px;
-            color: #333333;
-            line-height: 1.35;
-            margin-top: 2px;
+            font-size: 14px;
+            color: #333;
+            line-height: 1.45;
+            margin-top: 0;
         }
-
+        
+        .divider {
+            border: none;
+            border-top: 1px solid #ccc;
+            margin: 24px 0 12px 0;
+        }
+        
         .footer {
-            margin-top: 45px;
-            padding-top: 12px;
-            border-top: 1px solid #cccccc;
-            font-size: 11px;
-            color: #555555;
+            font-size: 12px;
+            color: #666;
             text-align: center;
+            line-height: 1.45;
+            padding-bottom: 0;
         }
-
+        
+        .paid-stamp {
+            display: block;
+            text-align: right;
+            font-size: 12px;
+            color: #16a34a;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        
         @media print {
-            body { padding: 20px; }
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+
+            html, body {
+                width: 100%;
+                height: auto;
+            }
+
+            body {
+                padding: 0;
+            }
+
+            .certificate {
+                max-width: 100%;
+                page-break-inside: avoid;
+            }
+
+            .divider,
+            .footer {
+                page-break-inside: avoid;
+            }
         }
     </style>
 </head>
-
 <body>
     <div class="certificate">
+        
+        <!-- HEADER -->
         <div class="header">
-            <div class="logo-row">
-                <div class="logo-cell">
+            <div class="header-top">
+                <div class="header-logo">
                     ' . $logoHtml . '
                 </div>
-
-                <div class="name-cell">
-                    <span class="hospital-name">Care Aus</span>
+                <div class="header-info">
+                    <div class="hospital-name">CARE AUS</div>
+                    <div class="hospital-address">
+                        Level 35, 100 Barangaroo Avenue<br>
+                        BARANGAROO, NSW, 2000<br>
+                        <a href="mailto:admin@careaus.com.au">admin@careaus.com.au</a><br>
+                        ABN: 43-668-260-964
+                    </div>
                 </div>
             </div>
-
-            <div class="hospital-details">
-                Level 35, 100 Barangaroo Avenue, BARANGAROO, NSW, 2000<br>
-                Email: admin@careaus.com.au | ABN: 43-668-260-964
-            </div>
-        </div>
-
-        <div class="date">
-            ' . $issueDate . '
-        </div>
-
-        <div class="certificate-title">
-            Medical Certificate
-        </div>
-
-        <div class="body-text">
-            This document is to certify that <strong>' . $patientName . '</strong>, is unfit for their study/work 
-            from the <strong>' . $startDate . '</strong> until the <strong>' . $endDate . '</strong> inclusive 
-            (' . $daysText . ').
-        </div>
-
-        <div class="body-text">
-            This document is produced for the purpose of ' . htmlspecialchars($purposeText) . '.
         </div>
         
-        <div class="closing">
-            Sincerely,
+        <!-- DATE & REFERENCE -->
+        <div class="reference-line">
+            <span class="date-line">Date: ' . $issueDate . '</span>
+            <span class="ref-line">Reference: ' . $certificateNumber . '</span>
         </div>
+        
+        <!-- TITLE -->
+        <div class="certificate-title">Medical Certificate</div>
+        
+        <!-- PATIENT -->
+        <div class="patient-section">
+            <div class="re-line">Re:</div>
+            <div class="patient-name">' . $patientName . '</div>
+            ' . ($patientAddress ? '<div class="patient-address">' . $patientAddress . '</div>' : '') . '
+        </div>
+        
+        <!-- BODY -->
+        <div class="body-text">
+            This document is to certify that the above patient, <strong>' . $patientName . '</strong>, 
+            is unfit for their normal duties from the <strong>' . $startDate . '</strong> 
+            until the <strong>' . $endDate . '</strong> inclusive (' . (int)$days . ' day' . ($days > 1 ? 's' : '') . ').
+        </div>
+        
+        <div class="purpose-text">
+            This document is produced for the purposes of <strong>' . $purposeLabel . '</strong>.
+        </div>
+        
+        <!-- SIGNATURE -->
+        <div class="closing">Yours sincerely,</div>
         
         <div class="signature-section">
-            <div class="signature-image">
-                ' . $signatureHtml . '
-            </div>
-            
-            <div class="doctor-name">
-                Dr ' . htmlspecialchars($doctorDisplayName) . '
-            </div>
-
+            ' . $signatureHtml . '
+            <div class="signed-line">Signed with digital certificate</div>
+            <div class="doctor-name">Dr ' . htmlspecialchars($doctorDisplayName) . '</div>
             <div class="doctor-credentials">
-                ' . $specialization . '
-                ' . ($licenseNumber ? '| AHPRA Registration No. ' . $licenseNumber : '') . '
+                ' . $specialization . '<br>
+                AHPRA: ' . $licenseNumber . '
             </div>
         </div>
         
+        <!-- FOOTER -->
+        <hr class="divider">
         <div class="footer">
             This is a computer-generated medical certificate and is valid without a physical signature.<br>
-            Certificate #: ' . $certificateNumber . ' | Issued: ' . $issueDate . '
+            Certificate #: ' . $certificateNumber . ' &nbsp;|&nbsp; Issued: ' . $issueDate . '
         </div>
+        
     </div>
 </body>
 </html>';

@@ -19,13 +19,27 @@ if (!$patient) {
 }
 $patientId = $patient['patientId'];
 
+// FIXED: Get bills with doctor names from BOTH medical_records AND medical_certificates
 $stmt = $pdo->prepare("
-    SELECT b.*, CONCAT(u.firstName, ' ', u.lastName) as doctorName, mr.diagnosis
-    FROM bills b 
-    LEFT JOIN medical_records mr ON b.recordId = mr.recordId 
-    LEFT JOIN doctors d ON mr.doctorId = d.doctorId
-    LEFT JOIN staff s ON d.staffId = s.staffId 
-    LEFT JOIN users u ON s.userId = u.userId 
+    SELECT b.*, 
+           COALESCE(
+               CONCAT(mr_doctor.firstName, ' ', mr_doctor.lastName),
+               CONCAT(cert_doctor.firstName, ' ', cert_doctor.lastName),
+               'Not Assigned'
+           ) as doctorName,
+           COALESCE(mr_doctor_spec.specialization, cert_doctor_spec.specialization, '') as specialization,
+           mr.diagnosis
+    FROM bills b
+    LEFT JOIN medical_records mr ON b.recordId = mr.recordId
+    LEFT JOIN doctors mr_doc ON mr.doctorId = mr_doc.doctorId
+    LEFT JOIN staff mr_staff ON mr_doc.staffId = mr_staff.staffId
+    LEFT JOIN users mr_doctor ON mr_staff.userId = mr_doctor.userId
+    LEFT JOIN doctors mr_doctor_spec ON mr.doctorId = mr_doctor_spec.doctorId
+    LEFT JOIN medical_certificates mc ON b.billId = mc.bill_id
+    LEFT JOIN doctors cert_doc ON mc.doctor_id = cert_doc.doctorId
+    LEFT JOIN staff cert_staff ON cert_doc.staffId = cert_staff.staffId
+    LEFT JOIN users cert_doctor ON cert_staff.userId = cert_doctor.userId
+    LEFT JOIN doctors cert_doctor_spec ON mc.doctor_id = cert_doctor_spec.doctorId
     WHERE b.patientId = ? 
     ORDER BY b.generatedAt DESC
 ");
@@ -53,7 +67,6 @@ foreach ($bills as $b) {
         </div>
     </div>
 
-    <!-- Payment Notice Banner for Unpaid Bills -->
     <?php if ($unpaidTotal > 0): ?>
         <div class="patient-payment-banner">
             <div class="patient-payment-banner-icon">
@@ -111,7 +124,16 @@ foreach ($bills as $b) {
                             <tr>
                                 <td data-label="Bill #">#<?php echo str_pad($b['billId'], 6, '0', STR_PAD_LEFT); ?></td>
                                 <td data-label="Date"><?php echo date('M j, Y', strtotime($b['generatedAt'])); ?></td>
-                                <td data-label="Doctor">Dr. <?php echo htmlspecialchars($b['doctorName']); ?></td>
+                                <td data-label="Doctor">
+                                    <?php if ($b['doctorName'] && $b['doctorName'] !== 'Not Assigned'): ?>
+                                        <strong>Dr. <?php echo htmlspecialchars($b['doctorName']); ?></strong>
+                                        <?php if ($b['specialization']): ?>
+                                            <br><small style="color:#64748b;"><?php echo htmlspecialchars($b['specialization']); ?></small>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <span style="color:#94a3b8;">—</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td data-label="Amount">$<?php echo number_format($b['totalAmount'], 2); ?></td>
                                 <td data-label="Status">
                                     <span class="patient-status-badge patient-status-<?php echo $b['status']; ?>">
@@ -133,7 +155,6 @@ foreach ($bills as $b) {
 </div>
 
 <style>
-    /* Payment Notice Banner */
 .patient-payment-banner {
     background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
     border: 2px solid #3b82f6;
@@ -195,133 +216,6 @@ foreach ($bills as $b) {
     width: 18px;
 }
 
-/* Payment Notice Section (on bill detail page) */
-.patient-payment-notice-section {
-    background: #f8fafc;
-    border: 2px solid #e2e8f0;
-    border-radius: 16px;
-    padding: 25px 30px;
-    margin-top: 25px;
-}
-
-.patient-payment-notice-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 15px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-.patient-payment-notice-header i {
-    font-size: 24px;
-    color: #3b82f6;
-}
-
-.patient-payment-notice-header span {
-    font-size: 18px;
-    font-weight: 700;
-    color: #1e293b;
-}
-
-.patient-payment-notice-section > p {
-    color: #475569;
-    font-size: 15px;
-    line-height: 1.6;
-    margin-bottom: 20px;
-}
-
-.patient-payment-notice-details {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    border: 1px solid #e2e8f0;
-}
-
-.patient-notice-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 0;
-    border-bottom: 1px solid #f1f5f9;
-}
-
-.patient-notice-item:last-child {
-    border-bottom: none;
-}
-
-.patient-notice-item i {
-    width: 20px;
-    color: #3b82f6;
-    font-size: 16px;
-    text-align: center;
-}
-
-.patient-notice-item span {
-    color: #334155;
-    font-size: 14px;
-}
-
-/* Paid Section */
-.patient-payment-paid-section {
-    background: #f0fdf4;
-    border: 2px solid #22c55e;
-    border-radius: 16px;
-    padding: 25px 30px;
-    margin-top: 25px;
-}
-
-.patient-payment-paid-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 10px;
-}
-
-.patient-payment-paid-header i {
-    font-size: 28px;
-    color: #16a34a;
-}
-
-.patient-payment-paid-header span {
-    font-size: 18px;
-    font-weight: 700;
-    color: #166534;
-}
-
-.patient-payment-paid-section p {
-    color: #166534;
-    font-size: 15px;
-    margin: 5px 0 0 40px;
-}
-
-/* Cancelled Section */
-.patient-payment-cancelled-section {
-    background: #fef2f2;
-    border: 2px solid #ef4444;
-    border-radius: 16px;
-    padding: 25px 30px;
-    margin-top: 25px;
-}
-
-.patient-payment-cancelled-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.patient-payment-cancelled-header i {
-    font-size: 28px;
-    color: #dc2626;
-}
-
-.patient-payment-cancelled-header span {
-    font-size: 18px;
-    font-weight: 700;
-    color: #991b1b;
-}
-
-/* Responsive */
 @media (max-width: 768px) {
     .patient-payment-banner {
         flex-direction: column;
@@ -337,14 +231,6 @@ foreach ($bills as $b) {
         flex-direction: column;
         align-items: center;
         gap: 10px;
-    }
-    
-    .patient-payment-notice-section {
-        padding: 20px;
-    }
-    
-    .patient-payment-notice-details {
-        padding: 15px;
     }
 }
 </style>
